@@ -1,7 +1,7 @@
 'use strict'
 
 const router = require('express').Router()
-const { run, validate, badRequest } = require('../shell')
+const { run, runSudo, validate, badRequest } = require('../shell')
 
 const VALID_SIGNALS = new Set(['TERM', 'KILL', 'HUP', 'INT', 'USR1', 'USR2'])
 
@@ -42,37 +42,39 @@ router.post('/kill', async (req, res) => {
     throw badRequest(`signal must be one of: ${[...VALID_SIGNALS].join(', ')}`)
   }
 
-  await run('kill', [`-${sig}`, String(pid)])
+  await runSudo(req.sudoPassword, 'kill', [`-${sig}`, String(pid)])
 
   res.json({ data: { ok: true, pid: String(pid), signal: sig } })
 })
 
 // GET /port/:port — find process listening on port
+// Returns { pid, user, command } by parsing ss output then cross-referencing ps
 router.get('/port/:port', async (req, res) => {
   const { port } = req.params
   validate('port', String(port), 'port')
 
   const { stdout } = await run('ss', ['-tulpn'])
-
-  // Parse ss -tulpn output
-  // Format: Netid State Recv-Q Send-Q Local Address:Port Peer Address:Port Process
-  const lines = stdout.split('\n').filter(Boolean)
   const portPattern = `:${port}`
 
-  const matched = lines
-    .slice(1) // skip header
-    .filter(line => line.includes(portPattern))
-    .map(line => {
-      const parts = line.trim().split(/\s+/)
-      const proto = parts[0] || ''
-      const state = parts[1] || ''
-      const local = parts[4] || ''
-      const peer = parts[5] || ''
-      const process = parts.slice(6).join(' ') || ''
-      return { proto, state, local, peer, process }
-    })
+  // Extract pid from ss process column: users:(("node",pid=1234,fd=5))
+  let pid = null
+  for (const line of stdout.split('\n')) {
+    if (!line.includes(portPattern)) continue
+    const m = line.match(/pid=(\d+)/)
+    if (m) { pid = m[1]; break }
+  }
 
-  res.json({ data: matched })
+  if (!pid) {
+    return res.status(404).json({ error: `No process found on port ${port}` })
+  }
+
+  // Look up user + command from ps for that pid
+  const { stdout: psOut } = await run('ps', ['-p', pid, '-o', 'user=,comm='])
+  const parts = psOut.trim().split(/\s+/)
+  const user = parts[0] || '?'
+  const command = parts.slice(1).join(' ') || '?'
+
+  res.json({ data: { pid, user, command } })
 })
 
 module.exports = router

@@ -5,128 +5,184 @@
     <h1 style="font-size:1.5rem; font-weight:700; color:var(--text-primary);">File Management</h1>
   </div>
 
-  <!-- Find Large Files Card -->
+  <!-- Description -->
+  <p style="color:var(--text-muted); font-size:0.875rem; margin-bottom:1.25rem;">
+    Browse, create, rename, delete files and folders, and set permissions. Equivalent Linux commands:
+    <span x-data="{ copied: false }" style="display:inline-flex; align-items:center; gap:0.35rem;">
+      <code style="background:#f1f5f9; padding:0.15rem 0.5rem; border-radius:4px; font-size:0.8125rem;">ls -la /path</code>
+      <button class="btn btn-sm btn-secondary" style="padding:0.15rem 0.5rem; font-size:0.75rem; line-height:1.4;"
+        x-on:click="copyText('ls -la /path', () => { copied = true; setTimeout(() => copied = false, 1500) })">
+        <span x-show="!copied">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </span>
+        <span x-show="copied" style="color:#16a34a;">✓</span>
+      </button>
+    </span>
+    /
+    <span x-data="{ copied: false }" style="display:inline-flex; align-items:center; gap:0.35rem;">
+      <code style="background:#f1f5f9; padding:0.15rem 0.5rem; border-radius:4px; font-size:0.8125rem;">rm -rf /path</code>
+      <button class="btn btn-sm btn-secondary" style="padding:0.15rem 0.5rem; font-size:0.75rem; line-height:1.4;"
+        x-on:click="copyText('rm -rf /path', () => { copied = true; setTimeout(() => copied = false, 1500) })">
+        <span x-show="!copied">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </span>
+        <span x-show="copied" style="color:#16a34a;">✓</span>
+      </button>
+    </span>
+    /
+    <span x-data="{ copied: false }" style="display:inline-flex; align-items:center; gap:0.35rem;">
+      <code style="background:#f1f5f9; padding:0.15rem 0.5rem; border-radius:4px; font-size:0.8125rem;">mv /path/old /path/new</code>
+      <button class="btn btn-sm btn-secondary" style="padding:0.15rem 0.5rem; font-size:0.75rem; line-height:1.4;"
+        x-on:click="copyText('mv /path/old /path/new', () => { copied = true; setTimeout(() => copied = false, 1500) })">
+        <span x-show="!copied">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </span>
+        <span x-show="copied" style="color:#16a34a;">✓</span>
+      </button>
+    </span>
+  </p>
+
+  <!-- File Browser Card -->
   <div class="card">
-    <div class="card-title">Find Large Files</div>
-    <div class="form-row" style="align-items:flex-end;">
-      <div>
-        <label>Directory</label>
-        <input type="text" x-model="dir" placeholder="e.g. /var/log" />
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem; flex-wrap:wrap; gap:0.5rem;">
+      <div class="card-title" style="margin-bottom:0; border-bottom:none; padding-bottom:0;">File Browser</div>
+    </div>
+    <div class="form-row" style="align-items:flex-end; margin-bottom:0.75rem;">
+      <div style="flex:1;">
+        <label>Path</label>
+        <input type="text" x-model="treePath" placeholder="e.g. / or /var/log" x-on:keydown.enter="loadTree()" />
       </div>
-      <div style="max-width:140px;">
-        <label>Min Size</label>
-        <input type="text" x-model="size" placeholder="100M" />
+      <div style="max-width:100px;">
+        <label>Depth</label>
+        <select x-model.number="treeDepth" style="width:100%; padding:0.5rem 0.75rem; border:1px solid var(--border); border-radius:6px; background:var(--bg-primary); color:var(--text-primary); font-size:0.875rem;">
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5">5</option>
+        </select>
       </div>
       <div style="flex:0;">
-        <button class="btn btn-primary" x-on:click="findLargeFiles()" :disabled="findLoading || !dir.trim()">
-          <span x-show="findLoading" class="spinner" style="width:14px;height:14px;margin-right:0.25rem;"></span>
-          <span x-show="!findLoading">Search</span>
+        <button class="btn btn-primary" x-on:click="loadTree()" :disabled="treeLoading || !treePath.trim()">
+          <span x-show="treeLoading" class="spinner" style="width:14px;height:14px;margin-right:0.25rem;"></span>
+          <span x-show="!treeLoading">Browse</span>
         </button>
       </div>
     </div>
 
-    <div x-show="findError" class="alert alert-error" x-text="findError"></div>
+    <div x-show="treeError" class="alert alert-error" x-text="treeError"></div>
 
-    <div x-show="largeFiles.length > 0" style="margin-top:1rem; overflow-x:auto;">
-      <table>
-        <thead>
-          <tr>
-            <th style="width:120px;">Size</th>
-            <th>Path</th>
-            <th style="width:160px;">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <template x-for="(file, i) in largeFiles" :key="i">
-            <tr>
-              <td class="monospace" x-text="file.size"></td>
-              <td class="monospace" style="word-break:break-all;" x-text="file.path"></td>
-              <td>
-                <button class="btn btn-secondary btn-sm" style="margin-right:0.25rem;"
-                  x-on:click="$root.showToast('Use terminal to compress files', 'info')">
-                  Compress
-                </button>
-                <button class="btn btn-danger btn-sm" x-on:click="deleteSingleFile(file.path)">Delete</button>
-              </td>
-            </tr>
-          </template>
-        </tbody>
-      </table>
+    <div x-show="treeLoading && !treeLoaded" class="loading-overlay" style="padding:2rem;">
+      <div class="spinner"></div>
     </div>
 
-    <div x-show="!findLoading && largeFilesSearched && largeFiles.length === 0 && !findError" class="empty-state">
-      <div class="empty-state-icon">🔍</div>
-      <div class="empty-state-text">No files found matching the criteria</div>
+    <div x-show="treeLoaded && treeItems.length === 0 && !treeError" class="empty-state">
+      <div class="empty-state-icon">📂</div>
+      <div class="empty-state-text">No files found in this path</div>
+    </div>
+
+    <div x-show="treeLoaded && treeItems.length > 0"
+         style="max-height:480px; overflow-y:auto; font-size:0.8125rem; font-family:monospace; border:1px solid var(--border); border-radius:6px; padding:0.5rem 0.25rem;">
+      <template x-for="item in treeItems" :key="item.relPath">
+        <div x-show="isVisible(item)"
+             :style="'padding: 0.18rem 0.5rem; display:flex; align-items:center; gap:0.35rem; padding-left: ' + ((item.depth - 1) * 1.25 + 0.5) + 'rem; cursor:' + (item.type === 'dir' ? 'pointer' : 'default') + '; border-radius:4px;'"
+             style="user-select:none;"
+             :class="item.type === 'dir' ? 'tree-dir' : ''"
+             x-on:click="item.type === 'dir' && toggleDir(item.relPath)">
+          <!-- Dir icon -->
+          <span x-show="item.type === 'dir'" style="color:#f59e0b; flex-shrink:0; width:1rem; text-align:center;"
+            x-text="collapsedDirs[item.relPath] ? '▶' : '▼'"></span>
+          <span x-show="item.type === 'dir'" style="color:#f59e0b;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          </span>
+          <!-- File icon -->
+          <span x-show="item.type !== 'dir'" style="color:#94a3b8; flex-shrink:0; width:1rem;"></span>
+          <span x-show="item.type !== 'dir'" style="color:#64748b;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+          </span>
+          <span x-text="item.name" :style="item.type === 'dir' ? 'color:var(--text-primary); font-weight:500;' : 'color:var(--text-secondary);'"></span>
+        </div>
+      </template>
     </div>
   </div>
 
-  <!-- Batch Delete Card -->
+  <!-- File Operations Card -->
   <div class="card">
-    <div class="card-title">Batch Delete</div>
-    <div class="form-row" style="align-items:flex-end;">
-      <div>
-        <label>Directory</label>
-        <input type="text" x-model="deleteDir" placeholder="e.g. /tmp" />
-      </div>
-      <div>
-        <label>Glob Pattern</label>
-        <input type="text" x-model="deletePattern" placeholder="e.g. *.log" />
-      </div>
-      <div style="flex:0;">
-        <button class="btn btn-danger" x-on:click="batchDelete()" :disabled="batchLoading || !deleteDir.trim() || !deletePattern.trim()">
-          <span x-show="batchLoading" class="spinner" style="width:14px;height:14px;margin-right:0.25rem;"></span>
-          <span x-show="!batchLoading">Delete</span>
-        </button>
-      </div>
+    <div class="card-title">File Operations</div>
+    <div style="margin-bottom:1rem;">
+      <label>Path (full path to file or folder)</label>
+      <input type="text" x-model="opPath" placeholder="e.g. /home/user/documents/report.pdf" x-on:keydown.enter="opPath.trim() && crudAction === 'delete' && confirmDeletePath()" />
     </div>
-    <div x-show="batchError" class="alert alert-error" x-text="batchError"></div>
-    <div x-show="batchSuccess" class="alert alert-success" x-text="batchSuccess"></div>
+    <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:1rem;">
+      <button class="btn btn-danger" x-on:click="confirmDeletePath()" :disabled="opLoading || !opPath.trim()">
+        <span x-show="opLoading && crudAction === 'delete'" class="spinner" style="width:14px;height:14px;margin-right:0.25rem;"></span>
+        Delete
+      </button>
+      <button class="btn btn-secondary" x-on:click="openRename()" :disabled="opLoading || !opPath.trim()">
+        <span x-show="opLoading && crudAction === 'rename'" class="spinner" style="width:14px;height:14px;margin-right:0.25rem;"></span>
+        Rename
+      </button>
+      <button class="btn btn-secondary" x-on:click="openCreate('file')" :disabled="opLoading || !opPath.trim()">
+        <span x-show="opLoading && crudAction === 'create-file'" class="spinner" style="width:14px;height:14px;margin-right:0.25rem;"></span>
+        New File
+      </button>
+      <button class="btn btn-secondary" x-on:click="openCreate('dir')" :disabled="opLoading || !opPath.trim()">
+        <span x-show="opLoading && crudAction === 'create-dir'" class="spinner" style="width:14px;height:14px;margin-right:0.25rem;"></span>
+        New Folder
+      </button>
+    </div>
+    <div x-show="opError" class="alert alert-error" x-text="opError"></div>
+    <div x-show="opSuccess" class="alert alert-success" x-text="opSuccess"></div>
   </div>
 
-  <!-- Set Permissions Card -->
-  <div class="card">
-    <div class="card-title">Set Permissions</div>
-    <div class="form-row">
-      <div>
-        <label>Directory</label>
-        <input type="text" x-model="chmodDir" placeholder="e.g. /var/www/html" />
-      </div>
-      <div>
-        <label>File Mode (octal)</label>
-        <input type="text" x-model="fmode" placeholder="e.g. 644" maxlength="4" />
-      </div>
-    </div>
-    <div class="form-row">
-      <div>
-        <label>Dir Mode (octal)</label>
-        <input type="text" x-model="dmode" placeholder="e.g. 755" maxlength="4" />
-      </div>
-      <div>
-        <label>Owner (user:group)</label>
-        <input type="text" x-model="owner" placeholder="e.g. www-data:www-data" />
-      </div>
-    </div>
-    <div x-show="chmodValidationError" class="alert alert-error" x-text="chmodValidationError"></div>
-    <div x-show="chmodError" class="alert alert-error" x-text="chmodError"></div>
-    <div x-show="chmodSuccess" class="alert alert-success" x-text="chmodSuccess"></div>
-    <button class="btn btn-primary" x-on:click="applyPermissions()" :disabled="chmodLoading || !chmodDir.trim()">
-      <span x-show="chmodLoading" class="spinner" style="width:14px;height:14px;margin-right:0.25rem;"></span>
-      <span x-show="!chmodLoading">Apply</span>
-    </button>
-  </div>
-
-  <!-- Delete Confirm Modal -->
-  <div x-show="confirmDelete" class="modal-overlay" style="display:flex;" x-cloak>
+  <!-- File Op Modal (delete confirm / rename / create) -->
+  <div x-show="modal.open" class="modal-overlay" style="display:flex;" x-cloak>
     <div class="modal">
-      <div class="modal-title">Confirm Delete</div>
-      <p style="color:var(--text-muted); margin-bottom:1rem; word-break:break-all;">
-        Permanently delete: <strong x-text="confirmDelete ? confirmDelete.path : ''"></strong>?
-      </p>
-      <p class="alert alert-error" style="margin-bottom:0;">This action cannot be undone.</p>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" x-on:click="confirmDelete = null">Cancel</button>
-        <button class="btn btn-danger" x-on:click="executeDelete()">Delete</button>
-      </div>
+      <!-- Delete Confirm -->
+      <template x-if="modal.type === 'delete'">
+        <div>
+          <div class="modal-title">Confirm Delete</div>
+          <p style="color:var(--text-muted); margin-bottom:1rem; word-break:break-all;">
+            Permanently delete: <strong x-text="modal.path"></strong>?
+          </p>
+          <p class="alert alert-error" style="margin-bottom:0;">This action cannot be undone.</p>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" x-on:click="modal.open = false">Cancel</button>
+            <button class="btn btn-danger" x-on:click="executeOp()">Delete</button>
+          </div>
+        </div>
+      </template>
+      <!-- Rename -->
+      <template x-if="modal.type === 'rename'">
+        <div>
+          <div class="modal-title">Rename</div>
+          <p style="color:var(--text-muted); margin-bottom:0.75rem; word-break:break-all; font-size:0.875rem;">
+            Renaming: <strong x-text="modal.path"></strong>
+          </p>
+          <label>New name</label>
+          <input type="text" x-model="modal.input" placeholder="e.g. new-name.txt" x-on:keydown.enter="executeOp()" x-ref="modalInput" />
+          <div class="modal-footer">
+            <button class="btn btn-secondary" x-on:click="modal.open = false">Cancel</button>
+            <button class="btn btn-primary" x-on:click="executeOp()" :disabled="!modal.input.trim()">Rename</button>
+          </div>
+        </div>
+      </template>
+      <!-- Create -->
+      <template x-if="modal.type === 'create-file' || modal.type === 'create-dir'">
+        <div>
+          <div class="modal-title" x-text="modal.type === 'create-dir' ? 'New Folder' : 'New File'"></div>
+          <p style="color:var(--text-muted); margin-bottom:0.75rem; word-break:break-all; font-size:0.875rem;">
+            Inside: <strong x-text="modal.path"></strong>
+          </p>
+          <label x-text="modal.type === 'create-dir' ? 'Folder name' : 'File name'"></label>
+          <input type="text" x-model="modal.input" :placeholder="modal.type === 'create-dir' ? 'e.g. my-folder' : 'e.g. notes.txt'" x-on:keydown.enter="executeOp()" x-ref="modalInput" />
+          <div class="modal-footer">
+            <button class="btn btn-secondary" x-on:click="modal.open = false">Cancel</button>
+            <button class="btn btn-primary" x-on:click="executeOp()" :disabled="!modal.input.trim()"
+              x-text="modal.type === 'create-dir' ? 'Create Folder' : 'Create File'"></button>
+          </div>
+        </div>
+      </template>
     </div>
   </div>
 

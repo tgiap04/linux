@@ -11,6 +11,101 @@
     <div x-show="!manager && !loading" class="badge badge-warning">Detecting...</div>
   </div>
 
+  <!-- Description -->
+  <p style="color:var(--text-muted); font-size:0.875rem; margin-bottom:1.25rem;">
+    Install, remove, and update packages. Equivalent Linux commands:
+    <span x-data="{ copied: false }" style="display:inline-flex; align-items:center; gap:0.35rem;">
+      <code style="background:#f1f5f9; padding:0.15rem 0.5rem; border-radius:4px; font-size:0.8125rem;">apt install &lt;pkg&gt;</code>
+      <button class="btn btn-sm btn-secondary" style="padding:0.15rem 0.5rem; font-size:0.75rem; line-height:1.4;"
+        x-on:click="copyText('apt install <pkg>', () => { copied = true; setTimeout(() => copied = false, 1500) })">
+        <span x-show="!copied">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </span>
+        <span x-show="copied" style="color:#16a34a;">✓</span>
+      </button>
+    </span>
+    /
+    <span x-data="{ copied: false }" style="display:inline-flex; align-items:center; gap:0.35rem;">
+      <code style="background:#f1f5f9; padding:0.15rem 0.5rem; border-radius:4px; font-size:0.8125rem;">apt update &amp;&amp; apt upgrade</code>
+      <button class="btn btn-sm btn-secondary" style="padding:0.15rem 0.5rem; font-size:0.75rem; line-height:1.4;"
+        x-on:click="copyText('apt update && apt upgrade', () => { copied = true; setTimeout(() => copied = false, 1500) })">
+        <span x-show="!copied">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </span>
+        <span x-show="copied" style="color:#16a34a;">✓</span>
+      </button>
+    </span>
+    /
+    <span x-data="{ copied: false }" style="display:inline-flex; align-items:center; gap:0.35rem;">
+      <code style="background:#f1f5f9; padding:0.15rem 0.5rem; border-radius:4px; font-size:0.8125rem;">dpkg -l</code>
+      <button class="btn btn-sm btn-secondary" style="padding:0.15rem 0.5rem; font-size:0.75rem; line-height:1.4;"
+        x-on:click="copyText('dpkg -l', () => { copied = true; setTimeout(() => copied = false, 1500) })">
+        <span x-show="!copied">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </span>
+        <span x-show="copied" style="color:#16a34a;">✓</span>
+      </button>
+    </span>
+  </p>
+
+  <!-- Installed Packages Card -->
+  <div class="card">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem; flex-wrap:wrap; gap:0.5rem;">
+      <div class="card-title" style="margin-bottom:0; border-bottom:none; padding-bottom:0;">
+        Installed Packages
+        <span x-show="pkgListLoaded" class="badge badge-info" style="margin-left:0.5rem; font-size:0.75rem;" x-text="filteredPkgs.length + ' / ' + installedPkgs.length"></span>
+      </div>
+      <button class="btn btn-secondary btn-sm" x-on:click="loadInstalledPackages()" :disabled="pkgListLoading">
+        <span x-show="pkgListLoading" class="spinner" style="width:14px;height:14px;"></span>
+        <span x-show="!pkgListLoading" x-text="pkgListLoaded ? 'Refresh' : 'Load'"></span>
+      </button>
+    </div>
+
+    <div x-show="pkgListError" class="alert alert-error" style="margin-bottom:0.75rem;" x-text="pkgListError"></div>
+
+    <div x-show="!pkgListLoaded && !pkgListLoading" style="color:var(--text-muted); font-size:0.875rem; margin-bottom:0.5rem;">
+      Click <strong>Load</strong> to list all installed packages.
+    </div>
+
+    <div x-show="pkgListLoading && !pkgListLoaded" class="loading-overlay" style="padding:2rem;">
+      <div class="spinner"></div>
+    </div>
+
+    <div x-show="pkgListLoaded">
+      <input type="text" x-model="pkgSearch" placeholder="Search packages..." style="margin-bottom:0.75rem;" />
+      <div x-show="filteredPkgs.length === 0 && pkgSearch" class="empty-state">
+        <div class="empty-state-text">No packages match "<span x-text="pkgSearch"></span>"</div>
+      </div>
+      <div x-show="filteredPkgs.length > 0" style="overflow-x:auto; max-height:400px; overflow-y:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Package</th>
+              <th>Version</th>
+              <th style="width:60px;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="(pkg, i) in filteredPkgs" :key="pkg.name">
+              <tr>
+                <td class="monospace" x-text="pkg.name"></td>
+                <td class="monospace" style="color:var(--text-muted);" x-text="pkg.version"></td>
+                <td>
+                  <button class="btn btn-danger btn-sm" style="padding:0.2rem 0.5rem; font-size:0.75rem;"
+                    :disabled="removingPkg === pkg.name"
+                    x-on:click="removeFromList(pkg.name)">
+                    <span x-show="removingPkg === pkg.name" class="spinner" style="width:12px;height:12px;"></span>
+                    <span x-show="removingPkg !== pkg.name">Remove</span>
+                  </button>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <!-- Error -->
   <div x-show="error" class="alert alert-error" x-text="error"></div>
 

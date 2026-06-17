@@ -3,6 +3,31 @@
 // Views use x-html to inject HTML templates — <script> tags inside x-html are
 // not executed by browsers, so all component logic lives here instead.
 
+// Copy text to clipboard with execCommand fallback for HTTP contexts.
+// Usage in view: x-on:click="copyText('cmd', el => el.dataset.copied = '1')"
+function copyText(text, doneCb) {
+  const done = () => { if (doneCb) doneCb() }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => {
+      _copyFallback(text)
+      done()
+    })
+  } else {
+    _copyFallback(text)
+    done()
+  }
+}
+
+function _copyFallback(text) {
+  const el = document.createElement('textarea')
+  el.value = text
+  el.style.cssText = 'position:fixed;opacity:0;pointer-events:none;'
+  document.body.appendChild(el)
+  el.select()
+  try { document.execCommand('copy') } catch (_) {}
+  document.body.removeChild(el)
+}
+
 function processesState() {
   return {
     processes: [],
@@ -43,17 +68,11 @@ function processesState() {
       const { proc, signal } = this.confirmKill
       this.confirmKill = null
       try {
-        const res = await fetch('/api/processes/kill', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pid: proc.pid, signal })
-        })
-        const json = await res.json()
-        if (!res.ok) throw new Error(json.error || 'Kill failed')
-        this.$root.showToast('SIG' + signal + ' sent to PID ' + proc.pid, 'success')
-        await this.loadProcesses()
+        await Alpine.store('app').api('POST', '/processes/kill', { pid: proc.pid, signal })
+        this.processes = this.processes.filter(p => p.pid !== proc.pid)
+        Alpine.store('app').showToast('SIG' + signal + ' sent to PID ' + proc.pid, 'success')
       } catch (e) {
-        this.$root.showToast(e.message, 'error')
+        if (e.message !== 'Sudo cancelled by user') Alpine.store('app').showToast(e.message, 'error')
       }
     },
 
@@ -200,13 +219,10 @@ function networkState() {
       this.firewallOutput = ''
       this.fwError = ''
       try {
-        const res = await fetch('/api/network/firewall')
-        const json = await res.json()
-        if (!res.ok) throw new Error(json.error || 'Failed to check firewall')
-        const d = json.data || {}
+        const d = await Alpine.store('app').api('POST', '/network/firewall')
         this.firewallOutput = (d.tool ? '[' + d.tool + ']\n' : '') + (d.output || '(no output)')
       } catch (e) {
-        this.fwError = e.message
+        if (e.message !== 'Sudo cancelled by user') this.fwError = e.message
       } finally {
         this.fwLoading = false
       }
@@ -233,6 +249,12 @@ function packagesState() {
     autoremoveLoading: false,
     autoremoveError: '',
     autoremoveSuccess: '',
+    installedPkgs: [],
+    pkgSearch: '',
+    pkgListLoading: false,
+    pkgListLoaded: false,
+    pkgListError: '',
+    removingPkg: '',
 
     async init() {
       this.loading = true
@@ -259,19 +281,15 @@ function packagesState() {
       this.installError = ''
       this.installSuccess = ''
       try {
-        const res = await fetch('/api/packages/install', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ packages: names })
-        })
-        const json = await res.json()
-        if (!res.ok) throw new Error(json.error || 'Install failed')
+        await Alpine.store('app').api('POST', '/packages/install', { packages: names })
         this.installSuccess = 'Installed: ' + names.join(', ')
         this.pkgInput = ''
-        this.$root.showToast('Packages installed successfully', 'success')
+        Alpine.store('app').showToast('Packages installed successfully', 'success')
       } catch (e) {
-        this.installError = e.message
-        this.$root.showToast(e.message, 'error')
+        if (e.message !== 'Sudo cancelled by user') {
+          this.installError = e.message
+          Alpine.store('app').showToast(e.message, 'error')
+        }
       } finally {
         this.installLoading = false
       }
@@ -284,32 +302,44 @@ function packagesState() {
       this.removeError = ''
       this.removeSuccess = ''
       try {
-        const res = await fetch('/api/packages/remove', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pkg: names[0], purge: this.purge })
-        })
-        const json = await res.json()
-        if (!res.ok) throw new Error(json.error || 'Remove failed')
+        await Alpine.store('app').api('POST', '/packages/remove', { pkg: names[0], purge: this.purge })
         this.removeSuccess = 'Removed: ' + names.join(', ')
         this.removeInput = ''
-        this.$root.showToast('Packages removed successfully', 'success')
+        Alpine.store('app').showToast('Packages removed successfully', 'success')
       } catch (e) {
-        this.removeError = e.message
-        this.$root.showToast(e.message, 'error')
+        if (e.message !== 'Sudo cancelled by user') {
+          this.removeError = e.message
+          Alpine.store('app').showToast(e.message, 'error')
+        }
       } finally {
         this.removeLoading = false
       }
     },
 
-    startUpdate() {
+    async startUpdate() {
       if (this.updating) return
-      this.updating = true
       this.updateLog = ''
-      const evtSource = new EventSource('/api/packages/update/stream')
+      // Get a one-time sudo token (triggers password modal if needed)
+      let token
+      try {
+        const data = await Alpine.store('app').api('POST', '/sudo/verify', null)
+        token = data && data.token
+      } catch (e) {
+        if (e.message !== 'Sudo cancelled by user') Alpine.store('app').showToast(e.message, 'error')
+        return
+      }
+      this.updating = true
+      const url = '/api/packages/update/stream' + (token ? '?_sudo_token=' + token : '')
+      const evtSource = new EventSource(url)
       evtSource.onmessage = (e) => {
         try {
           const d = JSON.parse(e.data)
+          if (d.error === 'sudo_required') {
+            evtSource.close()
+            this.updating = false
+            Alpine.store('app').showToast('Sudo password required — please retry', 'warning')
+            return
+          }
           if (d.line) {
             this.updateLog += d.line
             this.$nextTick(() => {
@@ -320,7 +350,7 @@ function packagesState() {
           if (d.done) {
             evtSource.close()
             this.updating = false
-            this.$root.showToast('Update complete (exit ' + (d.code || 0) + ')', d.code === 0 ? 'success' : 'warning')
+            Alpine.store('app').showToast('Update complete (exit ' + (d.code || 0) + ')', d.code === 0 ? 'success' : 'warning')
           }
         } catch (_) {
           this.updateLog += e.data + '\n'
@@ -329,7 +359,43 @@ function packagesState() {
       evtSource.onerror = () => {
         evtSource.close()
         this.updating = false
-        this.$root.showToast('Update stream disconnected', 'warning')
+        Alpine.store('app').showToast('Update stream disconnected', 'warning')
+      }
+    },
+
+    get filteredPkgs() {
+      const q = this.pkgSearch.trim().toLowerCase()
+      if (!q) return this.installedPkgs
+      return this.installedPkgs.filter(p => p.name.toLowerCase().includes(q))
+    },
+
+    async removeFromList(name) {
+      if (this.removingPkg) return
+      this.removingPkg = name
+      try {
+        await Alpine.store('app').api('POST', '/packages/remove', { pkg: name, purge: false })
+        this.installedPkgs = this.installedPkgs.filter(p => p.name !== name)
+        Alpine.store('app').showToast('Removed: ' + name, 'success')
+      } catch (e) {
+        if (e.message !== 'Sudo cancelled by user') Alpine.store('app').showToast(e.message, 'error')
+      } finally {
+        this.removingPkg = ''
+      }
+    },
+
+    async loadInstalledPackages() {
+      this.pkgListLoading = true
+      this.pkgListError = ''
+      try {
+        const res = await fetch('/api/packages/list')
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Failed to load packages')
+        this.installedPkgs = json.data || []
+        this.pkgListLoaded = true
+      } catch (e) {
+        this.pkgListError = e.message
+      } finally {
+        this.pkgListLoading = false
       }
     },
 
@@ -338,14 +404,14 @@ function packagesState() {
       this.autoremoveError = ''
       this.autoremoveSuccess = ''
       try {
-        const res = await fetch('/api/packages/autoremove', { method: 'POST' })
-        const json = await res.json()
-        if (!res.ok) throw new Error(json.error || 'Autoremove failed')
+        await Alpine.store('app').api('POST', '/packages/autoremove', null)
         this.autoremoveSuccess = 'Autoremove completed successfully'
-        this.$root.showToast('Autoremove completed', 'success')
+        Alpine.store('app').showToast('Autoremove completed', 'success')
       } catch (e) {
-        this.autoremoveError = e.message
-        this.$root.showToast(e.message, 'error')
+        if (e.message !== 'Sudo cancelled by user') {
+          this.autoremoveError = e.message
+          Alpine.store('app').showToast(e.message, 'error')
+        }
       } finally {
         this.autoremoveLoading = false
       }
@@ -355,134 +421,132 @@ function packagesState() {
 
 function filesState() {
   return {
-    largeFiles: [],
-    dir: '',
-    size: '100M',
-    findLoading: false,
-    findError: '',
-    largeFilesSearched: false,
-    deleteDir: '',
-    deletePattern: '',
-    batchLoading: false,
-    batchError: '',
-    batchSuccess: '',
-    chmodDir: '',
-    fmode: '',
-    dmode: '',
-    owner: '',
-    chmodLoading: false,
-    chmodError: '',
-    chmodSuccess: '',
-    chmodValidationError: '',
-    confirmDelete: null,
+    opPath: '',
+    opLoading: false,
+    opError: '',
+    opSuccess: '',
+    crudAction: '',
+    modal: { open: false, type: '', path: '', input: '' },
+    treePath: '/',
+    treeDepth: 3,
+    treeItems: [],
+    treeLoading: false,
+    treeLoaded: false,
+    treeError: '',
+    collapsedDirs: {},
 
     init() {},
 
-    octalPattern: /^[0-7]{3,4}$/,
-
-    async findLargeFiles() {
-      if (!this.dir.trim()) return
-      this.findLoading = true
-      this.findError = ''
-      this.largeFilesSearched = false
-      this.largeFiles = []
+    async loadTree() {
+      if (!this.treePath.trim()) return
+      this.treeLoading = true
+      this.treeError = ''
+      this.treeLoaded = false
       try {
-        const params = new URLSearchParams({ dir: this.dir, size: this.size || '100M' })
-        const res = await fetch('/api/files/large?' + params.toString())
+        const params = new URLSearchParams({ path: this.treePath.trim(), depth: this.treeDepth })
+        const res = await fetch('/api/files/tree?' + params)
         const json = await res.json()
-        if (!res.ok) throw new Error(json.error || 'Search failed')
-        this.largeFiles = json.data || []
-        this.largeFilesSearched = true
+        if (!res.ok) throw new Error(json.error || 'Failed to load tree')
+        this.treeItems = json.data || []
+        // Default all dirs to collapsed
+        const collapsed = {}
+        this.treeItems.forEach(item => { if (item.type === 'dir') collapsed[item.relPath] = true })
+        this.collapsedDirs = collapsed
+        this.treeLoaded = true
       } catch (e) {
-        this.findError = e.message
+        this.treeError = e.message
       } finally {
-        this.findLoading = false
+        this.treeLoading = false
       }
     },
 
-    deleteSingleFile(path) {
-      this.confirmDelete = { path, mode: 'single' }
+    toggleDir(relPath) {
+      // true = collapsed, false = expanded; reassign to trigger Alpine reactivity
+      this.collapsedDirs[relPath] = !this.collapsedDirs[relPath]
     },
 
-    async executeDelete() {
-      if (!this.confirmDelete) return
-      const { path } = this.confirmDelete
-      this.confirmDelete = null
-      try {
-        const res = await fetch('/api/files/delete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path })
-        })
-        const json = await res.json()
-        if (!res.ok) throw new Error(json.error || 'Delete failed')
-        this.largeFiles = this.largeFiles.filter(f => f.path !== path)
-        this.$root.showToast('Deleted: ' + path, 'success')
-      } catch (e) {
-        this.$root.showToast(e.message, 'error')
+    isVisible(item) {
+      // Depth-1 items (direct children of root) are always visible
+      // An item is hidden if any ancestor dir is collapsed (collapsedDirs[ancestor] === true)
+      const parts = item.relPath.split('/')
+      for (let i = 1; i < parts.length; i++) {
+        const ancestor = parts.slice(0, i).join('/')
+        if (this.collapsedDirs[ancestor] === true) return false
       }
+      return true
     },
 
-    async batchDelete() {
-      if (!this.deleteDir.trim() || !this.deletePattern.trim()) return
-      if (!confirm('Delete all files matching "' + this.deletePattern + '" in ' + this.deleteDir + '? This cannot be undone.')) return
-      this.batchLoading = true
-      this.batchError = ''
-      this.batchSuccess = ''
+    confirmDeletePath() {
+      if (!this.opPath.trim()) return
+      this.opError = ''
+      this.opSuccess = ''
+      this.crudAction = 'delete'
+      this.modal = { open: true, type: 'delete', path: this.opPath.trim(), input: '' }
+    },
+
+    openRename() {
+      if (!this.opPath.trim()) return
+      this.opError = ''
+      this.opSuccess = ''
+      this.crudAction = 'rename'
+      this.modal = { open: true, type: 'rename', path: this.opPath.trim(), input: '' }
+      this.$nextTick(() => { if (this.$refs.modalInput) this.$refs.modalInput.focus() })
+    },
+
+    openCreate(type) {
+      if (!this.opPath.trim()) return
+      this.opError = ''
+      this.opSuccess = ''
+      this.crudAction = 'create-' + type
+      this.modal = { open: true, type: 'create-' + type, path: this.opPath.trim(), input: '' }
+      this.$nextTick(() => { if (this.$refs.modalInput) this.$refs.modalInput.focus() })
+    },
+
+    async executeOp() {
+      const { type, path, input } = this.modal
+      if (!type || !path) return
+      if ((type === 'rename' || type === 'create-file' || type === 'create-dir') && !input.trim()) return
+      this.modal.open = false
+      this.opLoading = true
+      this.opError = ''
+      this.opSuccess = ''
       try {
-        const res = await fetch('/api/files/delete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ dir: this.deleteDir, pattern: this.deletePattern })
-        })
-        const json = await res.json()
-        if (!res.ok) throw new Error(json.error || 'Batch delete failed')
-        this.batchSuccess = 'Batch delete completed'
-        this.deleteDir = ''
-        this.deletePattern = ''
-        this.$root.showToast('Batch delete completed', 'success')
+        let endpoint, body
+        if (type === 'delete') {
+          endpoint = '/files/delete-path'
+          body = { path }
+        } else if (type === 'rename') {
+          endpoint = '/files/rename'
+          body = { path, newName: input.trim() }
+        } else {
+          endpoint = '/files/create'
+          body = { path, name: input.trim(), type: type === 'create-dir' ? 'dir' : 'file' }
+        }
+        await Alpine.store('app').api('POST', endpoint, body)
+        if (type === 'delete') {
+          this.opSuccess = 'Deleted: ' + path
+          Alpine.store('app').showToast('Deleted: ' + path, 'success')
+          this.opPath = ''
+        } else if (type === 'rename') {
+          const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) || '/' : '.'
+          this.opSuccess = 'Renamed to: ' + dir.replace(/\/$/, '') + '/' + input.trim()
+          Alpine.store('app').showToast('Renamed successfully', 'success')
+          this.opPath = ''
+        } else {
+          this.opSuccess = 'Created: ' + path.replace(/\/$/, '') + '/' + input.trim()
+          Alpine.store('app').showToast('Created successfully', 'success')
+        }
       } catch (e) {
-        this.batchError = e.message
-        this.$root.showToast(e.message, 'error')
+        if (e.message !== 'Sudo cancelled by user') {
+          this.opError = e.message
+          Alpine.store('app').showToast(e.message, 'error')
+        }
       } finally {
-        this.batchLoading = false
+        this.opLoading = false
+        this.crudAction = ''
       }
     },
 
-    validateModes() {
-      if (this.fmode && !this.octalPattern.test(this.fmode)) return 'File mode must be 3-4 octal digits (e.g. 644)'
-      if (this.dmode && !this.octalPattern.test(this.dmode)) return 'Dir mode must be 3-4 octal digits (e.g. 755)'
-      return ''
-    },
-
-    async applyPermissions() {
-      if (!this.chmodDir.trim()) return
-      this.chmodValidationError = this.validateModes()
-      if (this.chmodValidationError) return
-      this.chmodLoading = true
-      this.chmodError = ''
-      this.chmodSuccess = ''
-      try {
-        const body = { dir: this.chmodDir }
-        if (this.fmode) body.fileMode = this.fmode
-        if (this.dmode) body.dirMode = this.dmode
-        if (this.owner) body.owner = this.owner
-        const res = await fetch('/api/files/chmod', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
-        })
-        const json = await res.json()
-        if (!res.ok) throw new Error(json.error || 'chmod failed')
-        this.chmodSuccess = 'Permissions applied to ' + this.chmodDir
-        this.$root.showToast('Permissions applied', 'success')
-      } catch (e) {
-        this.chmodError = e.message
-        this.$root.showToast(e.message, 'error')
-      } finally {
-        this.chmodLoading = false
-      }
-    }
   }
 }
 
@@ -537,10 +601,10 @@ function cronState() {
         const res = await fetch('/api/cron/' + index, { method: 'DELETE' })
         const json = await res.json()
         if (!res.ok) throw new Error(json.error || 'Delete failed')
-        this.$root.showToast('Cron job deleted', 'success')
-        await this.loadJobs()
+        this.jobs.splice(index, 1)
+        Alpine.store('app').showToast('Cron job deleted', 'success')
       } catch (e) {
-        this.$root.showToast(e.message, 'error')
+        Alpine.store('app').showToast(e.message, 'error')
       }
     },
 
@@ -549,6 +613,7 @@ function cronState() {
       this.addLoading = true
       this.addError = ''
       try {
+        const entry = [this.min || '*', this.hour || '*', this.day || '*', this.month || '*', this.wday || '*', this.cmd].join(' ')
         const res = await fetch('/api/cron/add', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -563,17 +628,17 @@ function cronState() {
         })
         const json = await res.json()
         if (!res.ok) throw new Error(json.error || 'Failed to add cron job')
-        this.$root.showToast('Cron job added', 'success')
+        this.jobs.push({ index: this.jobs.length, entry })
         this.cmd = ''
         this.min = '*'
         this.hour = '*'
         this.day = '*'
         this.month = '*'
         this.wday = '*'
-        await this.loadJobs()
+        Alpine.store('app').showToast('Cron job added', 'success')
       } catch (e) {
         this.addError = e.message
-        this.$root.showToast(e.message, 'error')
+        Alpine.store('app').showToast(e.message, 'error')
       } finally {
         this.addLoading = false
       }
@@ -584,22 +649,20 @@ function cronState() {
       this.backupLoading = true
       this.backupError = ''
       try {
+        const schedule = this.backupSchedule || '0 0 * * *'
         const res = await fetch('/api/cron/backup', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            src: this.backupSrc,
-            dest: this.backupDest,
-            schedule: this.backupSchedule || '0 0 * * *'
-          })
+          body: JSON.stringify({ src: this.backupSrc, dest: this.backupDest, schedule })
         })
         const json = await res.json()
         if (!res.ok) throw new Error(json.error || 'Failed to schedule backup')
-        this.$root.showToast('Backup job scheduled', 'success')
-        await this.loadJobs()
+        const entry = schedule + ' rsync -a ' + this.backupSrc + ' ' + this.backupDest
+        this.jobs.push({ index: this.jobs.length, entry })
+        Alpine.store('app').showToast('Backup job scheduled', 'success')
       } catch (e) {
         this.backupError = e.message
-        this.$root.showToast(e.message, 'error')
+        Alpine.store('app').showToast(e.message, 'error')
       } finally {
         this.backupLoading = false
       }
@@ -662,18 +725,14 @@ function timeState() {
       this.tzLoading = true
       this.tzError = ''
       try {
-        const res = await fetch('/api/time/timezone', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tz })
-        })
-        const json = await res.json()
-        if (!res.ok) throw new Error(json.error || 'Failed to set timezone')
-        this.$root.showToast('Timezone set to ' + tz, 'success')
-        await this.loadStatus()
+        await Alpine.store('app').api('POST', '/time/timezone', { tz })
+        if (this.status) this.status.timezone = tz
+        Alpine.store('app').showToast('Timezone set to ' + tz, 'success')
       } catch (e) {
-        this.tzError = e.message
-        this.$root.showToast(e.message, 'error')
+        if (e.message !== 'Sudo cancelled by user') {
+          this.tzError = e.message
+          Alpine.store('app').showToast(e.message, 'error')
+        }
       } finally {
         this.tzLoading = false
       }
@@ -683,14 +742,14 @@ function timeState() {
       this.ntpEnableLoading = true
       this.ntpError = ''
       try {
-        const res = await fetch('/api/time/ntp', { method: 'POST' })
-        const json = await res.json()
-        if (!res.ok) throw new Error(json.error || 'Failed to enable NTP')
-        this.$root.showToast('NTP sync enabled', 'success')
-        await this.loadStatus()
+        await Alpine.store('app').api('POST', '/time/ntp', null)
+        if (this.status) this.status.ntpSync = true
+        Alpine.store('app').showToast('NTP sync enabled', 'success')
       } catch (e) {
-        this.ntpError = e.message
-        this.$root.showToast(e.message, 'error')
+        if (e.message !== 'Sudo cancelled by user') {
+          this.ntpError = e.message
+          Alpine.store('app').showToast(e.message, 'error')
+        }
       } finally {
         this.ntpEnableLoading = false
       }

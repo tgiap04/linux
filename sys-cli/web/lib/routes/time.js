@@ -1,7 +1,7 @@
 'use strict'
 
 const router = require('express').Router()
-const { run, badRequest, validate } = require('../shell')
+const { run, runSudo, badRequest, validate } = require('../shell')
 
 // Try timedatectl; if ENOENT fall back to `date`
 async function getTimedatectl() {
@@ -89,7 +89,7 @@ router.post('/timezone', async (req, res) => {
     throw badRequest(`Unknown timezone: "${tz}"`)
   }
 
-  await run('sudo', ['timedatectl', 'set-timezone', tz])
+  await runSudo(req.sudoPassword, 'timedatectl', ['set-timezone', tz])
 
   // Return the new time after setting
   const { stdout } = await run('date')
@@ -98,7 +98,7 @@ router.post('/timezone', async (req, res) => {
 
 // POST /ntp — enable NTP sync
 router.post('/ntp', async (req, res) => {
-  await run('sudo', ['timedatectl', 'set-ntp', 'true'])
+  await runSudo(req.sudoPassword, 'timedatectl', ['set-ntp', 'true'])
   res.json({ data: { ok: true } })
 })
 

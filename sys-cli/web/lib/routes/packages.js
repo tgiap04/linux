@@ -1,7 +1,7 @@
 'use strict'
 
 const router = require('express').Router()
-const { run, runShell, stream, validate, badRequest } = require('../shell')
+const { run, runShell, runSudo, stream, streamSudo, validate, badRequest } = require('../shell')
 
 // --- Mutex to prevent concurrent package operations ---
 let pkgLock = false
@@ -25,30 +25,32 @@ async function detectManager() {
   return 'unknown'
 }
 
-// Build install/remove/update/autoremove args per manager
+// Build install/remove/update/autoremove args per manager.
+// Returns { cmd, args, env?, shell? } — caller passes to runSudo(password, cmd, args).
+// cmd is the real binary (no 'sudo' prefix); shell is used for pipeline commands.
 function buildCmd(manager, action, packages = [], purge = false) {
   const env = { ...process.env, DEBIAN_FRONTEND: 'noninteractive' }
 
   switch (manager) {
     case 'apt-get': {
-      if (action === 'install') return { cmd: 'sudo', args: ['apt-get', 'install', '-y', ...packages], env }
-      if (action === 'remove') return { cmd: 'sudo', args: ['apt-get', purge ? 'purge' : 'remove', '-y', ...packages], env }
-      if (action === 'update') return { cmd: 'sudo', args: ['apt-get', 'upgrade', '-y'], env }
-      if (action === 'autoremove') return { cmd: 'sudo', args: ['apt-get', 'autoremove', '-y'], env }
+      if (action === 'install') return { cmd: 'apt-get', args: ['install', '-y', ...packages], env }
+      if (action === 'remove') return { cmd: 'apt-get', args: [purge ? 'purge' : 'remove', '-y', ...packages], env }
+      if (action === 'update') return { cmd: 'apt-get', args: ['upgrade', '-y'], env }
+      if (action === 'autoremove') return { cmd: 'apt-get', args: ['autoremove', '-y'], env }
       break
     }
     case 'dnf':
     case 'yum': {
-      if (action === 'install') return { cmd: 'sudo', args: [manager, 'install', '-y', ...packages] }
-      if (action === 'remove') return { cmd: 'sudo', args: [manager, 'remove', '-y', ...packages] }
-      if (action === 'update') return { cmd: 'sudo', args: [manager, 'upgrade', '-y'] }
-      if (action === 'autoremove') return { cmd: 'sudo', args: [manager, 'autoremove', '-y'] }
+      if (action === 'install') return { cmd: manager, args: ['install', '-y', ...packages] }
+      if (action === 'remove') return { cmd: manager, args: ['remove', '-y', ...packages] }
+      if (action === 'update') return { cmd: manager, args: ['upgrade', '-y'] }
+      if (action === 'autoremove') return { cmd: manager, args: ['autoremove', '-y'] }
       break
     }
     case 'pacman': {
-      if (action === 'install') return { cmd: 'sudo', args: ['pacman', '-S', '--noconfirm', ...packages] }
-      if (action === 'remove') return { cmd: 'sudo', args: ['pacman', purge ? '-Rns' : '-R', '--noconfirm', ...packages] }
-      if (action === 'update') return { cmd: 'sudo', args: ['pacman', '-Su', '--noconfirm'] }
+      if (action === 'install') return { cmd: 'pacman', args: ['-S', '--noconfirm', ...packages] }
+      if (action === 'remove') return { cmd: 'pacman', args: [purge ? '-Rns' : '-R', '--noconfirm', ...packages] }
+      if (action === 'update') return { cmd: 'pacman', args: ['-Su', '--noconfirm'] }
       if (action === 'autoremove') return { cmd: null, shell: 'pacman -Qtdq | xargs -r sudo pacman -Rns --noconfirm' }
       break
     }
@@ -62,16 +64,48 @@ router.get('/detect', async (req, res) => {
   res.json({ data: manager })
 })
 
+// GET /list — list installed packages
+router.get('/list', async (req, res) => {
+  const manager = await detectManager()
+  if (manager === 'unknown') throw Object.assign(new Error('No supported package manager found'), { status: 500 })
+
+  let pkgs = []
+
+  if (manager === 'apt-get') {
+    const { stdout } = await run('dpkg-query', ['-W', '-f=${Package}\t${Version}\t${db:Status-Status}\n'])
+    pkgs = stdout.split('\n').filter(Boolean).reduce((acc, line) => {
+      const [name, version, status] = line.split('\t')
+      if (status && status.trim() === 'installed') acc.push({ name: name.trim(), version: version.trim() })
+      return acc
+    }, [])
+  } else if (manager === 'dnf' || manager === 'yum') {
+    const { stdout } = await run('rpm', ['-qa', '--queryformat', '%{NAME}\t%{VERSION}-%{RELEASE}\n'])
+    pkgs = stdout.split('\n').filter(Boolean).map(line => {
+      const [name, version] = line.split('\t')
+      return { name: name.trim(), version: version.trim() }
+    })
+  } else if (manager === 'pacman') {
+    const { stdout } = await run('pacman', ['-Q'])
+    pkgs = stdout.split('\n').filter(Boolean).map(line => {
+      const parts = line.trim().split(/\s+/)
+      return { name: parts[0] || '', version: parts[1] || '' }
+    })
+  }
+
+  res.json({ data: pkgs })
+})
+
 // POST /install — body: {packages: []}
 router.post('/install', async (req, res) => {
   const { packages } = req.body
   validate('pkgList', packages, 'packages')
+  const password = req.sudoPassword
 
   const data = await withLock(async () => {
     const manager = await detectManager()
     if (manager === 'unknown') throw Object.assign(new Error('No supported package manager found'), { status: 500 })
     const { cmd, args, env } = buildCmd(manager, 'install', packages)
-    const { stdout } = await run(cmd, args, env ? { env } : undefined)
+    const { stdout } = await runSudo(password, cmd, args, env ? { env } : undefined)
     return { ok: true, output: stdout }
   })
 
@@ -83,12 +117,13 @@ router.post('/remove', async (req, res) => {
   const { pkg, purge = false } = req.body
   if (!pkg) throw badRequest('pkg is required')
   validate('pkg', pkg, 'pkg')
+  const password = req.sudoPassword
 
   const data = await withLock(async () => {
     const manager = await detectManager()
     if (manager === 'unknown') throw Object.assign(new Error('No supported package manager found'), { status: 500 })
     const { cmd, args, env } = buildCmd(manager, 'remove', [pkg], purge)
-    const { stdout } = await run(cmd, args, env ? { env } : undefined)
+    const { stdout } = await runSudo(password, cmd, args, env ? { env } : undefined)
     return { ok: true, output: stdout }
   })
 
@@ -117,8 +152,17 @@ router.get('/update/stream', (req, res) => {
       return
     }
 
-    const { cmd, args, env } = buildCmd(manager, 'update')
-    const child = stream(
+    const sudoPassword = req.sudoPassword
+    if (!sudoPassword) {
+      res.write(`data: ${JSON.stringify({ error: 'sudo_required' })}\n\n`)
+      res.write(`data: ${JSON.stringify({ done: true, code: 1 })}\n\n`)
+      res.end()
+      pkgLock = false
+      return
+    }
+    const { cmd, args } = buildCmd(manager, 'update')
+    const child = streamSudo(
+      sudoPassword,
       cmd,
       args,
       chunk => res.write(`data: ${JSON.stringify({ line: chunk })}\n\n`),
@@ -144,13 +188,15 @@ router.get('/update/stream', (req, res) => {
 
 // POST /autoremove
 router.post('/autoremove', async (req, res) => {
+  const password = req.sudoPassword
+
   const data = await withLock(async () => {
     const manager = await detectManager()
     if (manager === 'unknown') throw Object.assign(new Error('No supported package manager found'), { status: 500 })
     const built = buildCmd(manager, 'autoremove')
     const { stdout } = built.shell
       ? await runShell(built.shell)
-      : await run(built.cmd, built.args, built.env ? { env: built.env } : {})
+      : await runSudo(password, built.cmd, built.args, built.env ? { env: built.env } : undefined)
     return { ok: true, output: stdout }
   })
 

@@ -17,6 +17,13 @@ app.use(rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHea
 app.use(express.json())
 app.use(express.urlencoded({ extended: false }))
 
+// --- Sudo password — extract from header so routes can call runSudo(req.sudoPassword, ...) ---
+// Password lives only in the request, never logged or stored.
+app.use((req, _res, next) => {
+  req.sudoPassword = req.headers['x-sudo-password'] || null
+  next()
+})
+
 // --- Audit log — print every user action (non-static API calls) to stdout ---
 app.use((req, _res, next) => {
   if (req.path.startsWith('/api/')) {
@@ -31,6 +38,44 @@ app.use((req, _res, next) => {
 
 // --- Static assets ---
 app.use(express.static(path.join(__dirname, 'public')))
+
+// --- Sudo token store — short-lived tokens for EventSource (can't set headers) ---
+const sudoTokens = new Map() // token -> { password, expires }
+function createSudoToken(password) {
+  const token = require('crypto').randomBytes(16).toString('hex')
+  sudoTokens.set(token, { password, expires: Date.now() + 30_000 }) // 30s TTL
+  setTimeout(() => sudoTokens.delete(token), 30_000)
+  return token
+}
+function consumeSudoToken(token) {
+  const entry = sudoTokens.get(token)
+  if (!entry || entry.expires < Date.now()) return null
+  sudoTokens.delete(token) // one-time use
+  return entry.password
+}
+
+// --- Sudo verify — test password and optionally issue a one-time token for SSE ---
+app.post('/api/sudo/verify', async (req, res) => {
+  const password = req.sudoPassword
+  if (!password) return res.status(400).json({ error: 'sudo_required' })
+  const { runSudo } = require('./lib/shell')
+  try {
+    await runSudo(password, 'true', [])
+    const token = createSudoToken(password)
+    res.json({ data: { ok: true, token } })
+  } catch (e) {
+    if (e.sudoIncorrect) return res.status(401).json({ error: 'incorrect_password' })
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// Attach sudo password from token query param (for EventSource) or header
+app.use((req, _res, next) => {
+  if (!req.sudoPassword && req.query._sudo_token) {
+    req.sudoPassword = consumeSudoToken(req.query._sudo_token) || null
+  }
+  next()
+})
 
 // --- API routes ---
 app.use('/api/files',     require('./lib/routes/files'))

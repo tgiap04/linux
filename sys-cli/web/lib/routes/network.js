@@ -1,7 +1,7 @@
 'use strict'
 
 const router = require('express').Router()
-const { run, validate, badRequest } = require('../shell')
+const { run, runSudo, validate, badRequest } = require('../shell')
 
 // Parse `ss -tulpn` output into structured array
 function parseSockets(stdout) {
@@ -90,47 +90,55 @@ router.get('/routes', async (req, res) => {
   res.json({ data: parseRoutes(stdout) })
 })
 
-// POST /ping — body: {host}
+// POST /ping — body: {host, port?}
+// Returns { reachable, ping, tcp } to match frontend expectations
 router.post('/ping', async (req, res) => {
-  const { host } = req.body
+  const { host, port } = req.body
   if (!host) throw badRequest('host is required')
   validate('host', host, 'host')
+  const tcpPort = parseInt(port, 10) || 80
 
-  let success = false
-  let rtt = null
-  let output = ''
+  // Run ICMP ping and TCP check concurrently
+  const [icmpResult, tcpResult] = await Promise.allSettled([
+    run('ping', ['-c', '3', '-W', '2', '--', host]),
+    run('bash', ['-c', `bash -c 'echo >/dev/tcp/${host}/${tcpPort}' 2>/dev/null && echo open || echo closed`]),
+  ])
 
-  try {
-    const result = await run('ping', ['-c', '3', '-W', '2', '--', host])
-    output = result.stdout
-
-    // Parse RTT from summary: "rtt min/avg/max/mdev = 0.1/0.2/0.3/0.0 ms"
+  // ICMP
+  let pingStr = null
+  let icmpOk = false
+  if (icmpResult.status === 'fulfilled') {
+    const output = icmpResult.value.stdout
     const rttMatch = output.match(/rtt[^=]+=\s*([\d.]+)\/([\d.]+)\/([\d.]+)/)
     if (rttMatch) {
-      rtt = { min: rttMatch[1], avg: rttMatch[2], max: rttMatch[3], unit: 'ms' }
+      pingStr = rttMatch[2] + ' ms'
+      icmpOk = true
     }
-    success = true
-  } catch (err) {
-    output = err.stderr || err.message || ''
-    success = false
   }
 
-  res.json({ data: { success, rtt, output } })
+  // TCP
+  let tcpOk = false
+  if (tcpResult.status === 'fulfilled') {
+    tcpOk = tcpResult.value.stdout.trim() === 'open'
+  }
+
+  res.json({ data: { reachable: icmpOk || tcpOk, ping: pingStr, tcp: tcpOk } })
 })
 
 // POST /dns — body: {target}
+// Returns { query, records } to match frontend expectations
 router.post('/dns', async (req, res) => {
   const { target } = req.body
   if (!target) throw badRequest('target is required')
   validate('host', target, 'target')
 
-  let results = []
+  let records = []
 
   // Try dig first
   try {
     const { stdout } = await run('dig', ['+short', target])
-    results = stdout.split('\n').filter(Boolean)
-    return res.json({ data: { tool: 'dig', results } })
+    records = stdout.split('\n').filter(Boolean)
+    return res.json({ data: { query: target, records } })
   } catch (digErr) {
     if (digErr.code !== 'ENOENT') {
       // dig found but returned error — still try fallback
@@ -140,32 +148,39 @@ router.post('/dns', async (req, res) => {
   // Fallback to getent hosts
   try {
     const { stdout } = await run('getent', ['hosts', target])
-    results = stdout.split('\n').filter(Boolean).map(line => line.trim().split(/\s+/)[0])
-    return res.json({ data: { tool: 'getent', results } })
+    records = stdout.split('\n').filter(Boolean).map(line => line.trim().split(/\s+/)[0])
+    return res.json({ data: { query: target, records } })
   } catch (getentErr) {
     throw Object.assign(new Error(`DNS lookup failed for "${target}"`), { status: 502 })
   }
 })
 
-// GET /firewall — detect and query firewall tool
-router.get('/firewall', async (req, res) => {
+// POST /firewall — detect and query firewall tool (requires sudo)
+router.post('/firewall', async (req, res) => {
+  const password = req.sudoPassword
   const tools = [
-    { name: 'ufw', check: ['ufw', ['status']] },
-    { name: 'firewall-cmd', check: ['firewall-cmd', ['--state']] },
-    { name: 'iptables', check: ['iptables', ['-L', '-n', '--line-numbers']] },
-    { name: 'nft', check: ['nft', ['list', 'ruleset']] },
+    { name: 'ufw',          cmd: 'ufw',          args: ['status', 'verbose'] },
+    { name: 'firewall-cmd', cmd: 'firewall-cmd',  args: ['--state'] },
+    { name: 'iptables',     cmd: 'iptables',      args: ['-L', '-n', '--line-numbers'] },
+    { name: 'nft',          cmd: 'nft',           args: ['list', 'ruleset'] },
   ]
 
-  for (const { name, check } of tools) {
+  for (const { name, cmd, args } of tools) {
     try {
-      const { stdout } = await run(check[0], check[1])
+      // Check if binary exists first (without sudo)
+      await run('which', [cmd])
+    } catch {
+      continue // not installed
+    }
+
+    try {
+      const { stdout } = await runSudo(password, cmd, args)
       return res.json({ data: { tool: name, output: stdout } })
     } catch (err) {
-      // ENOENT = not installed, permission error = installed but no access
-      if (err.code !== 'ENOENT') {
-        // Tool exists but errored — report partial result
-        return res.json({ data: { tool: name, output: err.stderr || err.message || '' } })
-      }
+      if (err.status === 400 && err.message === 'sudo_required') throw err
+      if (err.sudoIncorrect) throw Object.assign(new Error('incorrect_password'), { status: 401 })
+      // Tool errored but is installed — return its output
+      return res.json({ data: { tool: name, output: err.stderr || err.message || '' } })
     }
   }
 

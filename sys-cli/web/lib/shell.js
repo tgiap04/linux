@@ -7,6 +7,7 @@ const { execFile, spawn } = require('child_process')
 // --- Input validators — throw 400 on invalid input ---
 const VALIDATORS = {
   path:      v => /^[\w./~-]+$/.test(v) && !v.includes('..'),
+  filename:  v => typeof v === 'string' && v.trim().length > 0 && !v.includes('..') && !v.includes('/') && !/[\x00-\x1f]/.test(v),
   pkg:       v => /^[\w.+:-]+$/.test(v),
   pkgList:   v => Array.isArray(v) && v.length > 0 && v.every(p => /^[\w.+:-]+$/.test(p)),
   pid:       v => /^\d+$/.test(String(v)),
@@ -35,7 +36,9 @@ function run(cmd, args = [], opts = {}) {
   return new Promise((resolve, reject) => {
     execFile(cmd, args, { timeout: 30_000, ...opts }, (err, stdout, stderr) => {
       if (err) {
-        const e = Object.assign(err, { stderr: stderr?.trim() })
+        // Prefer stderr over the generic "Command failed" message
+        const msg = stderr?.trim() || err.message
+        const e = Object.assign(new Error(msg), { status: 500, stderr: stderr?.trim(), stdout: stdout || '', original: err })
         reject(e)
       } else {
         resolve({ stdout: stdout.trim(), stderr: stderr.trim() })
@@ -47,6 +50,36 @@ function run(cmd, args = [], opts = {}) {
 // --- runShell — bash -c for pipeline commands; all args must be pre-validated ---
 function runShell(script, opts = {}) {
   return run('bash', ['-c', script], opts)
+}
+
+// --- runSudo — sudo -S so password comes from stdin, never a CLI arg ---
+// Throws 401 { error: 'incorrect_password' } on bad password.
+// Throws 400 { error: 'sudo_required' } if no password provided.
+function runSudo(password, cmd, args = [], opts = {}) {
+  if (!password) {
+    const e = Object.assign(new Error('sudo_required'), { status: 400, sudoRequired: true })
+    return Promise.reject(e)
+  }
+  return new Promise((resolve, reject) => {
+    const child = require('child_process').execFile(
+      'sudo', ['-S', '-p', '', cmd, ...args],
+      { timeout: 30_000, ...opts },
+      (err, stdout, stderr) => {
+        if (err) {
+          const s = stderr?.trim() || ''
+          if (s.includes('incorrect password') || s.includes('Sorry, try again') || s.includes('Authentication failure')) {
+            return reject(Object.assign(new Error('incorrect_password'), { status: 401, sudoIncorrect: true }))
+          }
+          const msg = s || (err.code != null ? `Command exited with code ${err.code}` : err.message)
+          return reject(Object.assign(new Error(msg), { status: 500, stderr: s, stdout: stdout || '' }))
+        }
+        resolve({ stdout: stdout.trim(), stderr: stderr.trim() })
+      }
+    )
+    // Write password to stdin then close — sudo -S reads exactly one line
+    child.stdin.write(password + '\n')
+    child.stdin.end()
+  })
 }
 
 // --- stream — spawn + SSE callbacks ---
@@ -61,4 +94,20 @@ function stream(cmd, args, write, done) {
   return child
 }
 
-module.exports = { run, runShell, stream, validate, badRequest }
+// --- streamSudo — like stream but runs under sudo -S with password on stdin ---
+function streamSudo(password, cmd, args, write, done) {
+  const child = spawn('sudo', ['-S', '-p', '', cmd, ...args], { stdio: ['pipe', 'pipe', 'pipe'] })
+  child.stdin.write(password + '\n')
+  child.stdin.end()
+  child.stdout.on('data', d => write(d.toString()))
+  child.stderr.on('data', d => {
+    const s = d.toString()
+    // Suppress the sudo password prompt echo on stderr
+    if (!s.includes('[sudo]') && s.trim()) write(s)
+  })
+  child.on('close', code => done(code ?? 0))
+  child.on('error', err => { write(`Error: ${err.message}\n`); done(1) })
+  return child
+}
+
+module.exports = { run, runShell, runSudo, stream, streamSudo, validate, badRequest }

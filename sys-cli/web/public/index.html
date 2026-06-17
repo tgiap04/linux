@@ -70,6 +70,37 @@
     <div x-show="activeModule === 'time'" x-html="views.time"></div>
   </main>
 
+  <!-- Sudo password modal -->
+  <div x-show="sudo.visible" class="modal-overlay" style="display:flex;" x-cloak>
+    <div class="modal" style="max-width:380px;">
+      <div class="modal-title" style="display:flex; align-items:center; gap:0.5rem;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        Sudo Password Required
+      </div>
+      <p style="color:var(--text-muted); font-size:0.875rem; margin-bottom:1rem;">
+        This action requires elevated privileges. Enter your sudo password to continue.
+      </p>
+      <div x-show="sudo.error" class="alert alert-error" style="margin-bottom:0.75rem;" x-text="sudo.error"></div>
+      <label style="font-size:0.875rem; font-weight:500; display:block; margin-bottom:0.35rem;">Password</label>
+      <input
+        type="password"
+        x-model="sudo.password"
+        placeholder="Enter sudo password"
+        style="margin-bottom:1rem;"
+        x-on:keydown.enter="sudoConfirm()"
+        x-ref="sudoInput"
+        x-effect="sudo.visible && $nextTick(() => $refs.sudoInput && $refs.sudoInput.focus())"
+      />
+      <div class="modal-footer">
+        <button class="btn btn-secondary" x-on:click="sudoCancel()" :disabled="sudo.loading">Cancel</button>
+        <button class="btn btn-primary" x-on:click="sudoConfirm()" :disabled="sudo.loading || !sudo.password.trim()">
+          <span x-show="sudo.loading" class="spinner" style="width:14px;height:14px;margin-right:0.25rem;"></span>
+          <span x-show="!sudo.loading">Confirm</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast notification -->
   <div
     class="toast"
