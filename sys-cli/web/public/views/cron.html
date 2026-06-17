@@ -1,0 +1,263 @@
+<div x-data="cronState()" x-init="init()">
+
+  <!-- Header -->
+  <div style="margin-bottom:1.5rem;">
+    <h1 style="font-size:1.5rem; font-weight:700; color:var(--text-primary);">Cron Jobs</h1>
+  </div>
+
+  <!-- Error -->
+  <div x-show="error" class="alert alert-error" x-text="error"></div>
+
+  <!-- Current Cron Jobs Card -->
+  <div class="card">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem;">
+      <div class="card-title" style="margin-bottom:0; border-bottom:none; padding-bottom:0;">Current Cron Jobs</div>
+      <button class="btn btn-secondary btn-sm" x-on:click="loadJobs()" :disabled="loading">
+        <span x-show="loading" class="spinner" style="width:14px;height:14px;"></span>
+        <span x-show="!loading">Refresh</span>
+      </button>
+    </div>
+
+    <div x-show="loading && jobs.length === 0" class="loading-overlay" style="padding:2rem;">
+      <div class="spinner"></div>
+    </div>
+
+    <div x-show="!loading && jobs.length === 0 && !error" class="empty-state">
+      <div class="empty-state-icon">⏰</div>
+      <div class="empty-state-text">No cron jobs scheduled</div>
+    </div>
+
+    <div x-show="jobs.length > 0" style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:48px;">#</th>
+            <th>Entry</th>
+            <th style="width:80px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="(job, i) in jobs" :key="i">
+            <tr>
+              <td class="monospace text-muted" x-text="i + 1"></td>
+              <td class="monospace" style="word-break:break-all;" x-text="job.entry"></td>
+              <td>
+                <button class="btn btn-danger btn-sm" x-on:click="promptDeleteJob(i)">Delete</button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Add Cron Job Card -->
+  <div class="card">
+    <div class="card-title">Add Cron Job</div>
+
+    <div class="form-row">
+      <div>
+        <label>Minute</label>
+        <input type="text" x-model="min" placeholder="*" />
+      </div>
+      <div>
+        <label>Hour</label>
+        <input type="text" x-model="hour" placeholder="*" />
+      </div>
+      <div>
+        <label>Day</label>
+        <input type="text" x-model="day" placeholder="*" />
+      </div>
+      <div>
+        <label>Month</label>
+        <input type="text" x-model="month" placeholder="*" />
+      </div>
+      <div>
+        <label>Weekday</label>
+        <input type="text" x-model="wday" placeholder="*" />
+      </div>
+    </div>
+
+    <div>
+      <label>Command</label>
+      <input type="text" x-model="cmd" placeholder="e.g. /usr/bin/backup.sh" />
+    </div>
+
+    <div style="margin-bottom:1rem; padding:0.75rem; background:#f8fafc; border-radius:6px; border:1px solid var(--border);">
+      <span style="font-size:0.8125rem; color:var(--text-muted); margin-right:0.5rem;">Preview:</span>
+      <code style="font-size:0.875rem;" x-text="`${min || '*'} ${hour || '*'} ${day || '*'} ${month || '*'} ${wday || '*'} ${cmd}`"></code>
+    </div>
+
+    <div x-show="addError" class="alert alert-error" x-text="addError"></div>
+
+    <button class="btn btn-primary" x-on:click="addJob()" :disabled="addLoading || !cmd.trim()">
+      <span x-show="addLoading" class="spinner" style="width:14px;height:14px;margin-right:0.25rem;"></span>
+      <span x-show="!addLoading">Add Cron Job</span>
+    </button>
+  </div>
+
+  <!-- Setup Daily Backup Card -->
+  <div class="card">
+    <div class="card-title">Setup Backup Job</div>
+    <div class="form-row">
+      <div>
+        <label>Source Directory</label>
+        <input type="text" x-model="backupSrc" placeholder="e.g. /home/user/data" />
+      </div>
+      <div>
+        <label>Backup Destination</label>
+        <input type="text" x-model="backupDest" placeholder="e.g. /mnt/backup" />
+      </div>
+    </div>
+    <div>
+      <label>Schedule (cron expression)</label>
+      <input type="text" x-model="backupSchedule" placeholder="0 0 * * *" />
+    </div>
+    <div x-show="backupError" class="alert alert-error" x-text="backupError"></div>
+    <button class="btn btn-primary" x-on:click="scheduleBackup()"
+      :disabled="backupLoading || !backupSrc.trim() || !backupDest.trim()">
+      <span x-show="backupLoading" class="spinner" style="width:14px;height:14px;margin-right:0.25rem;"></span>
+      <span x-show="!backupLoading">Schedule Backup</span>
+    </button>
+  </div>
+
+  <!-- Delete Confirm Modal -->
+  <div x-show="confirmDeleteIndex !== null" class="modal-overlay" style="display:flex;" x-cloak>
+    <div class="modal">
+      <div class="modal-title">Delete Cron Job</div>
+      <p style="color:var(--text-muted); margin-bottom:1rem;">
+        Remove cron job #<span x-text="confirmDeleteIndex !== null ? confirmDeleteIndex + 1 : ''"></span>?
+      </p>
+      <div x-show="confirmDeleteIndex !== null" class="monospace" style="background:#f8fafc; padding:0.75rem; border-radius:6px; font-size:0.8125rem; margin-bottom:1rem; word-break:break-all;"
+        x-text="confirmDeleteIndex !== null ? jobs[confirmDeleteIndex].entry : ''"></div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" x-on:click="confirmDeleteIndex = null">Cancel</button>
+        <button class="btn btn-danger" x-on:click="executeDeleteJob()">Delete</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function cronState() {
+  return {
+    jobs: [],
+    loading: false,
+    error: '',
+    min: '*',
+    hour: '*',
+    day: '*',
+    month: '*',
+    wday: '*',
+    cmd: '',
+    addLoading: false,
+    addError: '',
+    backupSrc: '',
+    backupDest: '',
+    backupSchedule: '0 0 * * *',
+    backupLoading: false,
+    backupError: '',
+    confirmDeleteIndex: null,
+
+    async init() {
+      await this.loadJobs()
+    },
+
+    async loadJobs() {
+      this.loading = true
+      this.error = ''
+      try {
+        const res = await fetch('/api/cron/list')
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Failed to load cron jobs')
+        this.jobs = json.data || []
+      } catch (e) {
+        this.error = e.message
+      } finally {
+        this.loading = false
+      }
+    },
+
+    promptDeleteJob(index) {
+      this.confirmDeleteIndex = index
+    },
+
+    async executeDeleteJob() {
+      const index = this.confirmDeleteIndex
+      if (index === null) return
+      this.confirmDeleteIndex = null
+      try {
+        const res = await fetch('/api/cron/' + index, { method: 'DELETE' })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Delete failed')
+        this.$root.showToast('Cron job deleted', 'success')
+        await this.loadJobs()
+      } catch (e) {
+        this.$root.showToast(e.message, 'error')
+      }
+    },
+
+    async addJob() {
+      if (!this.cmd.trim()) return
+      this.addLoading = true
+      this.addError = ''
+      try {
+        const res = await fetch('/api/cron/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            min: this.min || '*',
+            hour: this.hour || '*',
+            day: this.day || '*',
+            month: this.month || '*',
+            wday: this.wday || '*',
+            cmd: this.cmd
+          })
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Failed to add cron job')
+        this.$root.showToast('Cron job added', 'success')
+        this.cmd = ''
+        this.min = '*'
+        this.hour = '*'
+        this.day = '*'
+        this.month = '*'
+        this.wday = '*'
+        await this.loadJobs()
+      } catch (e) {
+        this.addError = e.message
+        this.$root.showToast(e.message, 'error')
+      } finally {
+        this.addLoading = false
+      }
+    },
+
+    async scheduleBackup() {
+      if (!this.backupSrc.trim() || !this.backupDest.trim()) return
+      this.backupLoading = true
+      this.backupError = ''
+      try {
+        const res = await fetch('/api/cron/backup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            src: this.backupSrc,
+            dest: this.backupDest,
+            schedule: this.backupSchedule || '0 0 * * *'
+          })
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Failed to schedule backup')
+        this.$root.showToast('Backup job scheduled', 'success')
+        await this.loadJobs()
+      } catch (e) {
+        this.backupError = e.message
+        this.$root.showToast(e.message, 'error')
+      } finally {
+        this.backupLoading = false
+      }
+    }
+  }
+}
+</script>

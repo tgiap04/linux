@@ -1,0 +1,179 @@
+<div x-data="processesState()" x-init="init()">
+
+  <!-- Header -->
+  <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:1.5rem; flex-wrap:wrap;">
+    <h1 style="font-size:1.5rem; font-weight:700; color:var(--text-primary); flex:1;">Process Management</h1>
+    <div style="display:flex; gap:0.5rem;">
+      <button class="btn btn-sm" :class="sort === 'cpu' ? 'btn-primary' : 'btn-secondary'" x-on:click="sort='cpu'; loadProcesses()">CPU</button>
+      <button class="btn btn-sm" :class="sort === 'mem' ? 'btn-primary' : 'btn-secondary'" x-on:click="sort='mem'; loadProcesses()">Memory</button>
+    </div>
+    <button class="btn btn-secondary btn-sm" x-on:click="loadProcesses()" :disabled="loading">
+      <span x-show="loading" class="spinner" style="width:14px;height:14px;"></span>
+      <span x-show="!loading">Refresh</span>
+    </button>
+  </div>
+
+  <!-- Error -->
+  <div x-show="error" class="alert alert-error" x-text="error"></div>
+
+  <!-- Process Table Card -->
+  <div class="card">
+    <div class="card-title">Top Processes</div>
+
+    <div x-show="loading && processes.length === 0" class="loading-overlay" style="padding:2rem;">
+      <div class="spinner"></div>
+    </div>
+
+    <div x-show="!loading && processes.length === 0 && !error" class="empty-state">
+      <div class="empty-state-icon">📊</div>
+      <div class="empty-state-text">No processes found</div>
+    </div>
+
+    <div x-show="processes.length > 0" style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>PID</th>
+            <th>User</th>
+            <th>%CPU</th>
+            <th>%MEM</th>
+            <th style="width:40%;">Command</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="proc in processes" :key="proc.pid">
+            <tr>
+              <td class="monospace" x-text="proc.pid"></td>
+              <td x-text="proc.user"></td>
+              <td x-text="proc.cpu"></td>
+              <td x-text="proc.mem"></td>
+              <td class="monospace" style="max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" x-text="proc.command"></td>
+              <td>
+                <button class="btn btn-danger btn-sm" x-on:click="promptKill(proc, 'TERM')">Kill</button>
+                <button class="btn btn-sm" style="background:#7f1d1d; color:#fff; margin-left:0.25rem;" x-on:click="promptKill(proc, 'KILL')">Force Kill</button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Find by Port Card -->
+  <div class="card">
+    <div class="card-title">Find Process by Port</div>
+    <div class="form-row" style="align-items:flex-end;">
+      <div>
+        <label>Port Number</label>
+        <input type="number" x-model="portInput" placeholder="e.g. 8080" min="1" max="65535" />
+      </div>
+      <div style="flex:0;">
+        <button class="btn btn-primary" x-on:click="findByPort()" :disabled="portLoading || !portInput">
+          <span x-show="portLoading" class="spinner" style="width:14px;height:14px;"></span>
+          <span x-show="!portLoading">Search</span>
+        </button>
+      </div>
+    </div>
+    <div x-show="portError" class="alert alert-error" x-text="portError"></div>
+    <div x-show="portResult" class="alert alert-info" style="margin-top:0.5rem;">
+      <strong>Process found:</strong>
+      <span x-text="portResult ? `PID ${portResult.pid} — ${portResult.command} (user: ${portResult.user})` : ''"></span>
+    </div>
+  </div>
+
+  <!-- Kill Confirm Modal -->
+  <div x-show="confirmKill" class="modal-overlay" style="display:flex;" x-cloak>
+    <div class="modal">
+      <div class="modal-title">Confirm Kill Process</div>
+      <p style="color:var(--text-muted); margin-bottom:1rem;">
+        Send <strong x-text="confirmKill ? 'SIG' + confirmKill.signal : ''"></strong> to
+        <strong x-text="confirmKill ? confirmKill.proc.command.split(' ')[0] : ''"></strong>
+        (PID <span x-text="confirmKill ? confirmKill.proc.pid : ''"></span>)?
+      </p>
+      <p x-show="confirmKill && confirmKill.signal === 'KILL'" class="alert alert-error" style="margin-bottom:1rem;">
+        SIGKILL cannot be ignored. The process will be terminated immediately.
+      </p>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" x-on:click="confirmKill = null">Cancel</button>
+        <button class="btn btn-danger" x-on:click="executeKill()">Confirm Kill</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function processesState() {
+  return {
+    processes: [],
+    loading: false,
+    error: '',
+    sort: 'cpu',
+    confirmKill: null,
+    portInput: '',
+    portResult: null,
+    portError: '',
+    portLoading: false,
+
+    async init() {
+      await this.loadProcesses()
+    },
+
+    async loadProcesses() {
+      this.loading = true
+      this.error = ''
+      try {
+        const res = await fetch('/api/processes/list?sort=' + this.sort)
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Failed to load processes')
+        this.processes = json.data || []
+      } catch (e) {
+        this.error = e.message
+      } finally {
+        this.loading = false
+      }
+    },
+
+    promptKill(proc, signal) {
+      this.confirmKill = { proc, signal }
+    },
+
+    async executeKill() {
+      if (!this.confirmKill) return
+      const { proc, signal } = this.confirmKill
+      this.confirmKill = null
+      try {
+        const res = await fetch('/api/processes/kill', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pid: proc.pid, signal })
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Kill failed')
+        this.$root.showToast('SIG' + signal + ' sent to PID ' + proc.pid, 'success')
+        await this.loadProcesses()
+      } catch (e) {
+        this.$root.showToast(e.message, 'error')
+      }
+    },
+
+    async findByPort() {
+      if (!this.portInput) return
+      this.portLoading = true
+      this.portError = ''
+      this.portResult = null
+      try {
+        const res = await fetch('/api/processes/port/' + this.portInput)
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Not found')
+        this.portResult = json.data
+      } catch (e) {
+        this.portError = e.message
+      } finally {
+        this.portLoading = false
+      }
+    }
+  }
+}
+</script>

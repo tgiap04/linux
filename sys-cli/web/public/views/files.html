@@ -1,0 +1,272 @@
+<div x-data="filesState()" x-init="init()">
+
+  <!-- Header -->
+  <div style="margin-bottom:1.5rem;">
+    <h1 style="font-size:1.5rem; font-weight:700; color:var(--text-primary);">File Management</h1>
+  </div>
+
+  <!-- Find Large Files Card -->
+  <div class="card">
+    <div class="card-title">Find Large Files</div>
+    <div class="form-row" style="align-items:flex-end;">
+      <div>
+        <label>Directory</label>
+        <input type="text" x-model="dir" placeholder="e.g. /var/log" />
+      </div>
+      <div style="max-width:140px;">
+        <label>Min Size</label>
+        <input type="text" x-model="size" placeholder="100M" />
+      </div>
+      <div style="flex:0;">
+        <button class="btn btn-primary" x-on:click="findLargeFiles()" :disabled="findLoading || !dir.trim()">
+          <span x-show="findLoading" class="spinner" style="width:14px;height:14px;margin-right:0.25rem;"></span>
+          <span x-show="!findLoading">Search</span>
+        </button>
+      </div>
+    </div>
+
+    <div x-show="findError" class="alert alert-error" x-text="findError"></div>
+
+    <div x-show="largeFiles.length > 0" style="margin-top:1rem; overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:120px;">Size</th>
+            <th>Path</th>
+            <th style="width:160px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="(file, i) in largeFiles" :key="i">
+            <tr>
+              <td class="monospace" x-text="file.size"></td>
+              <td class="monospace" style="word-break:break-all;" x-text="file.path"></td>
+              <td>
+                <button class="btn btn-secondary btn-sm" style="margin-right:0.25rem;"
+                  x-on:click="$root.showToast('Use terminal to compress files', 'info')">
+                  Compress
+                </button>
+                <button class="btn btn-danger btn-sm" x-on:click="deleteSingleFile(file.path)">Delete</button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+
+    <div x-show="!findLoading && largeFilesSearched && largeFiles.length === 0 && !findError" class="empty-state">
+      <div class="empty-state-icon">🔍</div>
+      <div class="empty-state-text">No files found matching the criteria</div>
+    </div>
+  </div>
+
+  <!-- Batch Delete Card -->
+  <div class="card">
+    <div class="card-title">Batch Delete</div>
+    <div class="form-row" style="align-items:flex-end;">
+      <div>
+        <label>Directory</label>
+        <input type="text" x-model="deleteDir" placeholder="e.g. /tmp" />
+      </div>
+      <div>
+        <label>Glob Pattern</label>
+        <input type="text" x-model="deletePattern" placeholder="e.g. *.log" />
+      </div>
+      <div style="flex:0;">
+        <button class="btn btn-danger" x-on:click="batchDelete()" :disabled="batchLoading || !deleteDir.trim() || !deletePattern.trim()">
+          <span x-show="batchLoading" class="spinner" style="width:14px;height:14px;margin-right:0.25rem;"></span>
+          <span x-show="!batchLoading">Delete</span>
+        </button>
+      </div>
+    </div>
+    <div x-show="batchError" class="alert alert-error" x-text="batchError"></div>
+    <div x-show="batchSuccess" class="alert alert-success" x-text="batchSuccess"></div>
+  </div>
+
+  <!-- Set Permissions Card -->
+  <div class="card">
+    <div class="card-title">Set Permissions</div>
+    <div class="form-row">
+      <div>
+        <label>Directory</label>
+        <input type="text" x-model="chmodDir" placeholder="e.g. /var/www/html" />
+      </div>
+      <div>
+        <label>File Mode (octal)</label>
+        <input type="text" x-model="fmode" placeholder="e.g. 644" maxlength="4" />
+      </div>
+    </div>
+    <div class="form-row">
+      <div>
+        <label>Dir Mode (octal)</label>
+        <input type="text" x-model="dmode" placeholder="e.g. 755" maxlength="4" />
+      </div>
+      <div>
+        <label>Owner (user:group)</label>
+        <input type="text" x-model="owner" placeholder="e.g. www-data:www-data" />
+      </div>
+    </div>
+    <div x-show="chmodValidationError" class="alert alert-error" x-text="chmodValidationError"></div>
+    <div x-show="chmodError" class="alert alert-error" x-text="chmodError"></div>
+    <div x-show="chmodSuccess" class="alert alert-success" x-text="chmodSuccess"></div>
+    <button class="btn btn-primary" x-on:click="applyPermissions()" :disabled="chmodLoading || !chmodDir.trim()">
+      <span x-show="chmodLoading" class="spinner" style="width:14px;height:14px;margin-right:0.25rem;"></span>
+      <span x-show="!chmodLoading">Apply</span>
+    </button>
+  </div>
+
+  <!-- Delete Confirm Modal -->
+  <div x-show="confirmDelete" class="modal-overlay" style="display:flex;" x-cloak>
+    <div class="modal">
+      <div class="modal-title">Confirm Delete</div>
+      <p style="color:var(--text-muted); margin-bottom:1rem; word-break:break-all;">
+        Permanently delete: <strong x-text="confirmDelete ? confirmDelete.path : ''"></strong>?
+      </p>
+      <p class="alert alert-error" style="margin-bottom:0;">This action cannot be undone.</p>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" x-on:click="confirmDelete = null">Cancel</button>
+        <button class="btn btn-danger" x-on:click="executeDelete()">Delete</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function filesState() {
+  return {
+    largeFiles: [],
+    dir: '',
+    size: '100M',
+    findLoading: false,
+    findError: '',
+    largeFilesSearched: false,
+    deleteDir: '',
+    deletePattern: '',
+    batchLoading: false,
+    batchError: '',
+    batchSuccess: '',
+    chmodDir: '',
+    fmode: '',
+    dmode: '',
+    owner: '',
+    chmodLoading: false,
+    chmodError: '',
+    chmodSuccess: '',
+    chmodValidationError: '',
+    confirmDelete: null,
+
+    init() {},
+
+    octalPattern: /^[0-7]{3,4}$/,
+
+    async findLargeFiles() {
+      if (!this.dir.trim()) return
+      this.findLoading = true
+      this.findError = ''
+      this.largeFilesSearched = false
+      this.largeFiles = []
+      try {
+        const params = new URLSearchParams({ dir: this.dir, size: this.size || '100M' })
+        const res = await fetch('/api/files/large?' + params.toString())
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Search failed')
+        this.largeFiles = json.data || []
+        this.largeFilesSearched = true
+      } catch (e) {
+        this.findError = e.message
+      } finally {
+        this.findLoading = false
+      }
+    },
+
+    deleteSingleFile(path) {
+      this.confirmDelete = { path, mode: 'single' }
+    },
+
+    async executeDelete() {
+      if (!this.confirmDelete) return
+      const { path } = this.confirmDelete
+      this.confirmDelete = null
+      try {
+        const res = await fetch('/api/files/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path })
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Delete failed')
+        this.largeFiles = this.largeFiles.filter(f => f.path !== path)
+        this.$root.showToast('Deleted: ' + path, 'success')
+      } catch (e) {
+        this.$root.showToast(e.message, 'error')
+      }
+    },
+
+    async batchDelete() {
+      if (!this.deleteDir.trim() || !this.deletePattern.trim()) return
+      if (!confirm('Delete all files matching "' + this.deletePattern + '" in ' + this.deleteDir + '? This cannot be undone.')) return
+      this.batchLoading = true
+      this.batchError = ''
+      this.batchSuccess = ''
+      try {
+        const res = await fetch('/api/files/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dir: this.deleteDir, pattern: this.deletePattern })
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Batch delete failed')
+        this.batchSuccess = 'Batch delete completed'
+        this.deleteDir = ''
+        this.deletePattern = ''
+        this.$root.showToast('Batch delete completed', 'success')
+      } catch (e) {
+        this.batchError = e.message
+        this.$root.showToast(e.message, 'error')
+      } finally {
+        this.batchLoading = false
+      }
+    },
+
+    validateModes() {
+      if (this.fmode && !this.octalPattern.test(this.fmode)) {
+        return 'File mode must be 3-4 octal digits (e.g. 644)'
+      }
+      if (this.dmode && !this.octalPattern.test(this.dmode)) {
+        return 'Dir mode must be 3-4 octal digits (e.g. 755)'
+      }
+      return ''
+    },
+
+    async applyPermissions() {
+      if (!this.chmodDir.trim()) return
+      this.chmodValidationError = this.validateModes()
+      if (this.chmodValidationError) return
+      this.chmodLoading = true
+      this.chmodError = ''
+      this.chmodSuccess = ''
+      try {
+        const body = { dir: this.chmodDir }
+        if (this.fmode) body.fileMode = this.fmode
+        if (this.dmode) body.dirMode = this.dmode
+        if (this.owner) body.owner = this.owner
+        const res = await fetch('/api/files/chmod', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'chmod failed')
+        this.chmodSuccess = 'Permissions applied to ' + this.chmodDir
+        this.$root.showToast('Permissions applied', 'success')
+      } catch (e) {
+        this.chmodError = e.message
+        this.$root.showToast(e.message, 'error')
+      } finally {
+        this.chmodLoading = false
+      }
+    }
+  }
+}
+</script>

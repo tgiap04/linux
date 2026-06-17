@@ -1,0 +1,201 @@
+<div x-data="timeState()" x-init="init()">
+
+  <!-- Header -->
+  <div style="margin-bottom:1.5rem;">
+    <h1 style="font-size:1.5rem; font-weight:700; color:var(--text-primary);">System Time</h1>
+  </div>
+
+  <!-- Error -->
+  <div x-show="error" class="alert alert-error" x-text="error"></div>
+
+  <!-- Current Status Card -->
+  <div class="card">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem;">
+      <div class="card-title" style="margin-bottom:0; border-bottom:none; padding-bottom:0;">Current Status</div>
+      <button class="btn btn-secondary btn-sm" x-on:click="loadStatus()" :disabled="loading">
+        <span x-show="loading" class="spinner" style="width:14px;height:14px;"></span>
+        <span x-show="!loading">Refresh</span>
+      </button>
+    </div>
+
+    <div x-show="loading && !status" class="loading-overlay" style="padding:2rem;">
+      <div class="spinner"></div>
+    </div>
+
+    <div x-show="status" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:1rem;">
+      <div style="padding:1rem; background:#f8fafc; border-radius:8px; border:1px solid var(--border);">
+        <div style="font-size:0.75rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-muted); margin-bottom:0.4rem;">Local Time</div>
+        <div class="monospace" style="font-size:1rem; font-weight:600;" x-text="status ? status.datetime : '—'"></div>
+      </div>
+      <div style="padding:1rem; background:#f8fafc; border-radius:8px; border:1px solid var(--border);">
+        <div style="font-size:0.75rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-muted); margin-bottom:0.4rem;">Timezone</div>
+        <div class="monospace" style="font-size:1rem; font-weight:600;" x-text="status ? status.timezone : '—'"></div>
+      </div>
+      <div style="padding:1rem; background:#f8fafc; border-radius:8px; border:1px solid var(--border);">
+        <div style="font-size:0.75rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-muted); margin-bottom:0.4rem;">NTP Sync</div>
+        <div>
+          <span class="badge"
+            :class="status && status.ntpSync ? 'badge-up' : 'badge-warning'"
+            x-text="status ? (status.ntpSync ? 'Synced' : 'Not synced') : '—'"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Change Timezone Card -->
+  <div class="card">
+    <div class="card-title">Change Timezone</div>
+
+    <label>Filter Timezones</label>
+    <input
+      type="text"
+      x-model="tzFilter"
+      placeholder="e.g. America, Europe/London"
+      list="tz-datalist"
+      x-on:input="newTz = tzFilter"
+    />
+    <datalist id="tz-datalist">
+      <template x-for="tz in filteredTimezones" :key="tz">
+        <option :value="tz"></option>
+      </template>
+    </datalist>
+
+    <div x-show="tzError" class="alert alert-error" x-text="tzError"></div>
+
+    <button class="btn btn-primary" x-on:click="changeTimezone()" :disabled="tzLoading || !tzFilter.trim()">
+      <span x-show="tzLoading" class="spinner" style="width:14px;height:14px;margin-right:0.25rem;"></span>
+      <span x-show="!tzLoading">Set Timezone</span>
+    </button>
+  </div>
+
+  <!-- NTP Card -->
+  <div class="card">
+    <div class="card-title">NTP Sync</div>
+    <div style="display:flex; gap:0.75rem; flex-wrap:wrap; margin-bottom:1rem;">
+      <button class="btn btn-primary" x-on:click="enableNtp()" :disabled="ntpEnableLoading">
+        <span x-show="ntpEnableLoading" class="spinner" style="width:14px;height:14px;margin-right:0.25rem;"></span>
+        <span x-show="!ntpEnableLoading">Enable NTP Sync</span>
+      </button>
+      <button class="btn btn-secondary" x-on:click="checkNtpStatus()" :disabled="ntpStatusLoading">
+        <span x-show="ntpStatusLoading" class="spinner" style="width:14px;height:14px;margin-right:0.25rem;"></span>
+        <span x-show="!ntpStatusLoading">Check NTP Status</span>
+      </button>
+    </div>
+    <div x-show="ntpError" class="alert alert-error" x-text="ntpError"></div>
+    <div x-show="ntpStatus" style="margin-top:0.5rem;">
+      <div class="log-panel" x-text="ntpStatus"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function timeState() {
+  return {
+    status: null,
+    timezones: [],
+    tzFilter: '',
+    newTz: '',
+    loading: false,
+    error: '',
+    tzLoading: false,
+    tzError: '',
+    ntpStatus: '',
+    ntpEnableLoading: false,
+    ntpStatusLoading: false,
+    ntpError: '',
+
+    get filteredTimezones() {
+      const q = this.tzFilter.toLowerCase()
+      if (!q) return this.timezones.slice(0, 50)
+      return this.timezones.filter(tz => tz.toLowerCase().includes(q)).slice(0, 50)
+    },
+
+    async init() {
+      await Promise.all([this.loadStatus(), this.loadTimezones()])
+    },
+
+    async loadStatus() {
+      this.loading = true
+      this.error = ''
+      try {
+        const res = await fetch('/api/time/status')
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Failed to load time status')
+        this.status = json.data
+      } catch (e) {
+        this.error = e.message
+      } finally {
+        this.loading = false
+      }
+    },
+
+    async loadTimezones() {
+      try {
+        const res = await fetch('/api/time/timezones')
+        const json = await res.json()
+        if (!res.ok) return
+        this.timezones = json.data || []
+      } catch (_) {
+        // non-fatal: datalist just stays empty
+      }
+    },
+
+    async changeTimezone() {
+      const tz = this.tzFilter.trim()
+      if (!tz) return
+      this.tzLoading = true
+      this.tzError = ''
+      try {
+        const res = await fetch('/api/time/timezone', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tz })
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Failed to set timezone')
+        this.$root.showToast('Timezone set to ' + tz, 'success')
+        await this.loadStatus()
+      } catch (e) {
+        this.tzError = e.message
+        this.$root.showToast(e.message, 'error')
+      } finally {
+        this.tzLoading = false
+      }
+    },
+
+    async enableNtp() {
+      this.ntpEnableLoading = true
+      this.ntpError = ''
+      try {
+        const res = await fetch('/api/time/ntp', { method: 'POST' })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Failed to enable NTP')
+        this.$root.showToast('NTP sync enabled', 'success')
+        await this.loadStatus()
+      } catch (e) {
+        this.ntpError = e.message
+        this.$root.showToast(e.message, 'error')
+      } finally {
+        this.ntpEnableLoading = false
+      }
+    },
+
+    async checkNtpStatus() {
+      this.ntpStatusLoading = true
+      this.ntpError = ''
+      this.ntpStatus = ''
+      try {
+        const res = await fetch('/api/time/ntp-status')
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Failed to get NTP status')
+        this.ntpStatus = (json.data && json.data.raw) || json.data || '(no output)'
+      } catch (e) {
+        this.ntpError = e.message
+      } finally {
+        this.ntpStatusLoading = false
+      }
+    }
+  }
+}
+</script>

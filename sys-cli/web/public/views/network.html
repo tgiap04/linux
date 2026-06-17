@@ -1,0 +1,376 @@
+<div x-data="networkState()" x-init="init()">
+
+  <!-- Header -->
+  <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:1.5rem;">
+    <h1 style="font-size:1.5rem; font-weight:700; color:var(--text-primary); flex:1;">Network</h1>
+  </div>
+
+  <!-- Tab Bar -->
+  <div style="display:flex; gap:0.25rem; margin-bottom:1.5rem; border-bottom:1px solid var(--border); padding-bottom:0;">
+    <template x-for="tab in tabs" :key="tab.id">
+      <button
+        class="btn btn-sm"
+        :class="activeTab === tab.id ? 'btn-primary' : 'btn-secondary'"
+        style="border-radius:6px 6px 0 0; margin-bottom:-1px;"
+        x-on:click="activeTab = tab.id"
+        x-text="tab.label"
+      ></button>
+    </template>
+  </div>
+
+  <!-- Error -->
+  <div x-show="error" class="alert alert-error" x-text="error"></div>
+
+  <!-- Tab: Ports / Sockets -->
+  <div x-show="activeTab === 'sockets'">
+    <div class="card">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem;">
+        <div class="card-title" style="margin-bottom:0; border-bottom:none; padding-bottom:0;">Listening Ports</div>
+        <button class="btn btn-secondary btn-sm" x-on:click="loadSockets()" :disabled="loading">
+          <span x-show="loading" class="spinner" style="width:14px;height:14px;"></span>
+          <span x-show="!loading">Refresh</span>
+        </button>
+      </div>
+
+      <div x-show="loading && sockets.length === 0" class="loading-overlay" style="padding:2rem;">
+        <div class="spinner"></div>
+      </div>
+
+      <div x-show="!loading && sockets.length === 0" class="empty-state">
+        <div class="empty-state-icon">🔌</div>
+        <div class="empty-state-text">No open sockets found</div>
+      </div>
+
+      <div x-show="sockets.length > 0" style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Proto</th>
+              <th>Local Address</th>
+              <th>State</th>
+              <th>Process</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="(sock, i) in sockets" :key="i">
+              <tr>
+                <td><span class="badge badge-info" x-text="sock.proto"></span></td>
+                <td class="monospace" x-text="sock.local"></td>
+                <td>
+                  <span class="badge"
+                    :class="sock.state === 'LISTEN' || sock.state === 'ESTABLISHED' ? 'badge-up' : 'badge-warning'"
+                    x-text="sock.state"></span>
+                </td>
+                <td class="monospace" x-text="sock.process || '—'"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Interfaces -->
+  <div x-show="activeTab === 'interfaces'">
+    <div class="card">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem;">
+        <div class="card-title" style="margin-bottom:0; border-bottom:none; padding-bottom:0;">Network Interfaces</div>
+        <button class="btn btn-secondary btn-sm" x-on:click="loadInterfaces()" :disabled="ifLoading">
+          <span x-show="ifLoading" class="spinner" style="width:14px;height:14px;"></span>
+          <span x-show="!ifLoading">Refresh</span>
+        </button>
+      </div>
+
+      <div x-show="ifLoading && interfaces.length === 0" class="loading-overlay" style="padding:2rem;">
+        <div class="spinner"></div>
+      </div>
+
+      <div x-show="!ifLoading && interfaces.length === 0" class="empty-state">
+        <div class="empty-state-icon">🌐</div>
+        <div class="empty-state-text">No interfaces found</div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:1rem;">
+        <template x-for="iface in interfaces" :key="iface.name">
+          <div style="border:1px solid var(--border); border-radius:8px; padding:1rem;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.75rem;">
+              <span class="badge badge-info" style="font-size:0.875rem;" x-text="iface.name"></span>
+              <span class="badge" :class="iface.state === 'UP' ? 'badge-up' : 'badge-down'" x-text="iface.state"></span>
+            </div>
+            <div style="font-size:0.8125rem; color:var(--text-muted);">
+              <div x-show="iface.ipv4" style="margin-bottom:0.25rem;">
+                <span style="font-weight:600;">IPv4:</span>
+                <span class="monospace" x-text="iface.ipv4"></span>
+              </div>
+              <div x-show="iface.ipv6">
+                <span style="font-weight:600;">IPv6:</span>
+                <span class="monospace" x-text="iface.ipv6"></span>
+              </div>
+              <div x-show="!iface.ipv4 && !iface.ipv6" class="text-muted">No address assigned</div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Routes -->
+  <div x-show="activeTab === 'routes'">
+    <div class="card">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem;">
+        <div class="card-title" style="margin-bottom:0; border-bottom:none; padding-bottom:0;">Routing Table</div>
+        <button class="btn btn-secondary btn-sm" x-on:click="loadRoutes()" :disabled="rtLoading">
+          <span x-show="rtLoading" class="spinner" style="width:14px;height:14px;"></span>
+          <span x-show="!rtLoading">Refresh</span>
+        </button>
+      </div>
+
+      <div x-show="rtLoading && routes.length === 0" class="loading-overlay" style="padding:2rem;">
+        <div class="spinner"></div>
+      </div>
+
+      <div x-show="!rtLoading && routes.length === 0" class="empty-state">
+        <div class="empty-state-icon">🗺️</div>
+        <div class="empty-state-text">No routes found</div>
+      </div>
+
+      <div x-show="routes.length > 0" style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Destination</th>
+              <th>Gateway</th>
+              <th>Interface</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="(route, i) in routes" :key="i">
+              <tr :style="route.destination === 'default' || route.destination === '0.0.0.0' ? 'background:#eff6ff;' : ''">
+                <td class="monospace">
+                  <span x-text="route.destination"></span>
+                  <span x-show="route.destination === 'default' || route.destination === '0.0.0.0'"
+                    class="badge badge-info" style="margin-left:0.5rem; font-size:0.7rem;">default</span>
+                </td>
+                <td class="monospace" x-text="route.gateway || '—'"></td>
+                <td x-text="route.iface || '—'"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Ping/DNS -->
+  <div x-show="activeTab === 'ping'">
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+
+      <!-- Ping / TCP Test -->
+      <div class="card">
+        <div class="card-title">Connectivity Test</div>
+        <div>
+          <label>Host</label>
+          <input type="text" x-model="pingHost" placeholder="e.g. 8.8.8.8 or google.com" />
+          <label>Port</label>
+          <input type="number" x-model="pingPort" placeholder="80" min="1" max="65535" />
+          <button class="btn btn-primary" x-on:click="testConnectivity()" :disabled="pingLoading || !pingHost">
+            <span x-show="pingLoading" class="spinner" style="width:14px;height:14px;"></span>
+            <span x-show="!pingLoading">Test</span>
+          </button>
+        </div>
+        <div x-show="pingResult" style="margin-top:1rem;">
+          <div class="alert" :class="pingResult && pingResult.reachable ? 'alert-success' : 'alert-error'">
+            <div><strong>ICMP:</strong> <span x-text="pingResult ? (pingResult.ping || 'N/A') : ''"></span></div>
+            <div><strong>TCP Port <span x-text="pingPort || 80"></span>:</strong> <span x-text="pingResult ? (pingResult.tcp ? 'Open' : 'Closed/Filtered') : ''"></span></div>
+          </div>
+        </div>
+        <div x-show="pingError" class="alert alert-error" style="margin-top:0.5rem;" x-text="pingError"></div>
+      </div>
+
+      <!-- DNS Lookup -->
+      <div class="card">
+        <div class="card-title">DNS Lookup</div>
+        <div>
+          <label>Hostname or IP</label>
+          <input type="text" x-model="dnsQuery" placeholder="e.g. google.com or 8.8.8.8" />
+          <button class="btn btn-primary" x-on:click="dnsLookup()" :disabled="dnsLoading || !dnsQuery">
+            <span x-show="dnsLoading" class="spinner" style="width:14px;height:14px;"></span>
+            <span x-show="!dnsLoading">Lookup</span>
+          </button>
+        </div>
+        <div x-show="dnsResult" style="margin-top:1rem;">
+          <div class="alert alert-info">
+            <div><strong>Query:</strong> <span class="monospace" x-text="dnsResult ? dnsResult.query : ''"></span></div>
+            <template x-if="dnsResult && dnsResult.records && dnsResult.records.length">
+              <div style="margin-top:0.5rem;">
+                <strong>Records:</strong>
+                <div style="margin-top:0.25rem;">
+                  <template x-for="(rec, i) in (dnsResult ? dnsResult.records : [])" :key="i">
+                    <div class="monospace" style="font-size:0.8rem;" x-text="rec"></div>
+                  </template>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+        <div x-show="dnsError" class="alert alert-error" style="margin-top:0.5rem;" x-text="dnsError"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Tab: Firewall -->
+  <div x-show="activeTab === 'firewall'">
+    <div class="card">
+      <div class="card-title">Firewall Status</div>
+      <button class="btn btn-primary" x-on:click="checkFirewall()" :disabled="fwLoading">
+        <span x-show="fwLoading" class="spinner" style="width:14px;height:14px;"></span>
+        <span x-show="!fwLoading">Check Status</span>
+      </button>
+      <div x-show="firewallOutput" style="margin-top:1rem;">
+        <div class="log-panel" x-text="firewallOutput"></div>
+      </div>
+      <div x-show="fwError" class="alert alert-error" style="margin-top:0.75rem;" x-text="fwError"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function networkState() {
+  return {
+    activeTab: 'sockets',
+    tabs: [
+      { id: 'sockets', label: 'Ports' },
+      { id: 'interfaces', label: 'Interfaces' },
+      { id: 'routes', label: 'Routes' },
+      { id: 'ping', label: 'Ping/DNS' },
+      { id: 'firewall', label: 'Firewall' }
+    ],
+    sockets: [],
+    interfaces: [],
+    routes: [],
+    loading: false,
+    ifLoading: false,
+    rtLoading: false,
+    error: '',
+    pingHost: '',
+    pingPort: 80,
+    pingResult: null,
+    pingLoading: false,
+    pingError: '',
+    dnsQuery: '',
+    dnsResult: null,
+    dnsLoading: false,
+    dnsError: '',
+    firewallOutput: '',
+    fwLoading: false,
+    fwError: '',
+
+    async init() {
+      await this.loadSockets()
+    },
+
+    async loadSockets() {
+      this.loading = true
+      this.error = ''
+      try {
+        const res = await fetch('/api/network/sockets')
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Failed to load sockets')
+        this.sockets = json.data || []
+      } catch (e) {
+        this.error = e.message
+      } finally {
+        this.loading = false
+      }
+    },
+
+    async loadInterfaces() {
+      this.ifLoading = true
+      try {
+        const res = await fetch('/api/network/interfaces')
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Failed to load interfaces')
+        this.interfaces = json.data || []
+      } catch (e) {
+        this.error = e.message
+      } finally {
+        this.ifLoading = false
+      }
+    },
+
+    async loadRoutes() {
+      this.rtLoading = true
+      try {
+        const res = await fetch('/api/network/routes')
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Failed to load routes')
+        this.routes = json.data || []
+      } catch (e) {
+        this.error = e.message
+      } finally {
+        this.rtLoading = false
+      }
+    },
+
+    async testConnectivity() {
+      if (!this.pingHost) return
+      this.pingLoading = true
+      this.pingResult = null
+      this.pingError = ''
+      try {
+        const res = await fetch('/api/network/ping', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ host: this.pingHost, port: this.pingPort || 80 })
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Test failed')
+        this.pingResult = json.data
+      } catch (e) {
+        this.pingError = e.message
+      } finally {
+        this.pingLoading = false
+      }
+    },
+
+    async dnsLookup() {
+      if (!this.dnsQuery) return
+      this.dnsLoading = true
+      this.dnsResult = null
+      this.dnsError = ''
+      try {
+        const res = await fetch('/api/network/dns', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ target: this.dnsQuery })
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Lookup failed')
+        this.dnsResult = json.data
+      } catch (e) {
+        this.dnsError = e.message
+      } finally {
+        this.dnsLoading = false
+      }
+    },
+
+    async checkFirewall() {
+      this.fwLoading = true
+      this.firewallOutput = ''
+      this.fwError = ''
+      try {
+        const res = await fetch('/api/network/firewall')
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Failed to check firewall')
+        this.firewallOutput = json.data || '(no output)'
+      } catch (e) {
+        this.fwError = e.message
+      } finally {
+        this.fwLoading = false
+      }
+    }
+  }
+}
+</script>

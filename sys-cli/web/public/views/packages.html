@@ -1,0 +1,217 @@
+<div x-data="packagesState()" x-init="init()">
+
+  <!-- Header -->
+  <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:1.5rem; flex-wrap:wrap;">
+    <h1 style="font-size:1.5rem; font-weight:700; color:var(--text-primary); flex:1;">Package Management</h1>
+    <div x-show="manager">
+      <span class="badge badge-info" style="font-size:0.875rem;">
+        Manager: <span x-text="manager"></span>
+      </span>
+    </div>
+    <div x-show="!manager && !loading" class="badge badge-warning">Detecting...</div>
+  </div>
+
+  <!-- Error -->
+  <div x-show="error" class="alert alert-error" x-text="error"></div>
+
+  <!-- Install Card -->
+  <div class="card">
+    <div class="card-title">Install Packages</div>
+    <label>Package names (comma or space separated)</label>
+    <input type="text" x-model="pkgInput" placeholder="e.g. curl git vim" />
+    <div x-show="installError" class="alert alert-error" x-text="installError"></div>
+    <div x-show="installSuccess" class="alert alert-success" x-text="installSuccess"></div>
+    <button class="btn btn-primary" x-on:click="installPackages()" :disabled="installLoading || !pkgInput.trim()">
+      <span x-show="installLoading" class="spinner" style="width:14px;height:14px;margin-right:0.25rem;"></span>
+      <span x-show="!installLoading">Install</span>
+    </button>
+  </div>
+
+  <!-- Remove Card -->
+  <div class="card">
+    <div class="card-title">Remove Package</div>
+    <label>Package names (comma or space separated)</label>
+    <input type="text" x-model="removeInput" placeholder="e.g. curl" />
+    <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer; margin-bottom:0.75rem;">
+      <input type="checkbox" x-model="purge" style="width:auto; margin-bottom:0;" />
+      Purge config files
+    </label>
+    <div x-show="removeError" class="alert alert-error" x-text="removeError"></div>
+    <div x-show="removeSuccess" class="alert alert-success" x-text="removeSuccess"></div>
+    <button class="btn btn-danger" x-on:click="removePackages()" :disabled="removeLoading || !removeInput.trim()">
+      <span x-show="removeLoading" class="spinner" style="width:14px;height:14px;margin-right:0.25rem;"></span>
+      <span x-show="!removeLoading">Remove</span>
+    </button>
+  </div>
+
+  <!-- System Update Card -->
+  <div class="card">
+    <div class="card-title">System Update</div>
+    <p style="color:var(--text-muted); font-size:0.875rem; margin-bottom:1rem;">
+      Runs <code style="background:#f1f5f9; padding:0.1rem 0.4rem; border-radius:4px;">apt update && apt upgrade</code> (or equivalent). Output streams in real time.
+    </p>
+    <button class="btn btn-primary" x-on:click="startUpdate()" :disabled="updating">
+      <span x-show="updating" class="spinner" style="width:14px;height:14px;margin-right:0.25rem;"></span>
+      <span x-show="!updating">Update &amp; Upgrade</span>
+    </button>
+    <div x-show="updateLog" style="margin-top:1rem;">
+      <div class="log-panel" x-ref="logPanel" x-text="updateLog"></div>
+    </div>
+  </div>
+
+  <!-- Autoremove Card -->
+  <div class="card">
+    <div class="card-title">Autoremove</div>
+    <p style="color:var(--text-muted); font-size:0.875rem; margin-bottom:1rem;">
+      Remove automatically installed packages that are no longer needed.
+    </p>
+    <div x-show="autoremoveError" class="alert alert-error" x-text="autoremoveError"></div>
+    <div x-show="autoremoveSuccess" class="alert alert-success" x-text="autoremoveSuccess"></div>
+    <button class="btn btn-secondary" x-on:click="runAutoremove()" :disabled="autoremoveLoading">
+      <span x-show="autoremoveLoading" class="spinner" style="width:14px;height:14px;margin-right:0.25rem;"></span>
+      <span x-show="!autoremoveLoading">Autoremove</span>
+    </button>
+  </div>
+
+</div>
+
+<script>
+function packagesState() {
+  return {
+    manager: '',
+    pkgInput: '',
+    removeInput: '',
+    purge: false,
+    updateLog: '',
+    updating: false,
+    loading: false,
+    error: '',
+    installLoading: false,
+    installError: '',
+    installSuccess: '',
+    removeLoading: false,
+    removeError: '',
+    removeSuccess: '',
+    autoremoveLoading: false,
+    autoremoveError: '',
+    autoremoveSuccess: '',
+
+    async init() {
+      this.loading = true
+      try {
+        const res = await fetch('/api/packages/detect')
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Failed to detect package manager')
+        this.manager = json.data || 'unknown'
+      } catch (e) {
+        this.error = e.message
+      } finally {
+        this.loading = false
+      }
+    },
+
+    parsePackageNames(input) {
+      return input.split(/[\s,]+/).map(s => s.trim()).filter(Boolean)
+    },
+
+    async installPackages() {
+      const names = this.parsePackageNames(this.pkgInput)
+      if (!names.length) return
+      this.installLoading = true
+      this.installError = ''
+      this.installSuccess = ''
+      try {
+        const res = await fetch('/api/packages/install', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ packages: names })
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Install failed')
+        this.installSuccess = 'Installed: ' + names.join(', ')
+        this.pkgInput = ''
+        this.$root.showToast('Packages installed successfully', 'success')
+      } catch (e) {
+        this.installError = e.message
+        this.$root.showToast(e.message, 'error')
+      } finally {
+        this.installLoading = false
+      }
+    },
+
+    async removePackages() {
+      const names = this.parsePackageNames(this.removeInput)
+      if (!names.length) return
+      this.removeLoading = true
+      this.removeError = ''
+      this.removeSuccess = ''
+      try {
+        const res = await fetch('/api/packages/remove', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pkg: names[0], purge: this.purge })
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Remove failed')
+        this.removeSuccess = 'Removed: ' + names.join(', ')
+        this.removeInput = ''
+        this.$root.showToast('Packages removed successfully', 'success')
+      } catch (e) {
+        this.removeError = e.message
+        this.$root.showToast(e.message, 'error')
+      } finally {
+        this.removeLoading = false
+      }
+    },
+
+    startUpdate() {
+      if (this.updating) return
+      this.updating = true
+      this.updateLog = ''
+      const evtSource = new EventSource('/api/packages/update/stream')
+      evtSource.onmessage = (e) => {
+        try {
+          const d = JSON.parse(e.data)
+          if (d.line) {
+            this.updateLog += d.line
+            this.$nextTick(() => {
+              const panel = this.$refs.logPanel
+              if (panel) panel.scrollTop = panel.scrollHeight
+            })
+          }
+          if (d.done) {
+            evtSource.close()
+            this.updating = false
+            this.$root.showToast('Update complete (exit code ' + (d.code || 0) + ')', d.code === 0 ? 'success' : 'warning')
+          }
+        } catch (_) {
+          this.updateLog += e.data + '\n'
+        }
+      }
+      evtSource.onerror = () => {
+        evtSource.close()
+        this.updating = false
+        this.$root.showToast('Update stream disconnected', 'warning')
+      }
+    },
+
+    async runAutoremove() {
+      this.autoremoveLoading = true
+      this.autoremoveError = ''
+      this.autoremoveSuccess = ''
+      try {
+        const res = await fetch('/api/packages/autoremove', { method: 'POST' })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Autoremove failed')
+        this.autoremoveSuccess = 'Autoremove completed successfully'
+        this.$root.showToast('Autoremove completed', 'success')
+      } catch (e) {
+        this.autoremoveError = e.message
+        this.$root.showToast(e.message, 'error')
+      } finally {
+        this.autoremoveLoading = false
+      }
+    }
+  }
+}
+</script>
