@@ -27,6 +27,11 @@ function sysApp() {
           this.loading = false
         }
       }
+      // After x-html updates the DOM, tell Alpine to initialize any new components
+      this.$nextTick(() => {
+        const slot = document.querySelector('[x-show="activeModule === \'' + name + '\'"]')
+        if (slot) Alpine.initTree(slot)
+      })
     },
 
     showToast(msg, type) {

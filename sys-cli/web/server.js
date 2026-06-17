@@ -17,6 +17,18 @@ app.use(rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHea
 app.use(express.json())
 app.use(express.urlencoded({ extended: false }))
 
+// --- Audit log — print every user action (non-static API calls) to stdout ---
+app.use((req, _res, next) => {
+  if (req.path.startsWith('/api/')) {
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '-'
+    const body = req.method !== 'GET' && req.body && Object.keys(req.body).length
+      ? ' ' + JSON.stringify(req.body)
+      : ''
+    console.log(`[AUDIT] ${new Date().toISOString()} ${ip} ${req.method} ${req.path}${body}`)
+  }
+  next()
+})
+
 // --- Static assets ---
 app.use(express.static(path.join(__dirname, 'public')))
 
