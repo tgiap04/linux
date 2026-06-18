@@ -555,23 +555,54 @@ function cronState() {
     jobs: [],
     loading: false,
     error: '',
-    min: '*',
-    hour: '*',
+    min: '0',
+    hour: '0',
     day: '*',
     month: '*',
     wday: '*',
+    timeValue: '00:00',
     cmd: '',
+    logEnabled: false,
+    logFile: '',
     addLoading: false,
     addError: '',
-    backupSrc: '',
-    backupDest: '',
-    backupSchedule: '0 0 * * *',
-    backupLoading: false,
-    backupError: '',
     confirmDeleteIndex: null,
 
     async init() {
-      await this.loadJobs()
+      await Promise.all([this.loadJobs(), this.loadCurrentTime()])
+    },
+
+    async loadCurrentTime() {
+      try {
+        const res = await fetch('/api/cron/now')
+        const json = await res.json()
+        if (res.ok && json.data) {
+          this.hour = String(json.data.hour)
+          this.min = String(json.data.min)
+          this.timeValue = String(json.data.hour).padStart(2, '0') + ':' + String(json.data.min).padStart(2, '0')
+        }
+      } catch (_) {}
+    },
+
+    onTimeChange(val) {
+      const [h, m] = (val || '00:00').split(':')
+      this.hour = String(parseInt(h, 10))
+      this.min = String(parseInt(m, 10))
+    },
+
+    buildCmd() {
+      if (!this.cmd.trim()) return ''
+      const logPath = this.logEnabled && this.logFile.trim() ? this.logFile.trim() : null
+      return logPath ? `${this.cmd.trim()} >> ${logPath} 2>&1` : this.cmd.trim()
+    },
+
+    cronPreview() {
+      const min = this.min || '*'
+      const hour = this.hour || '*'
+      const day = this.day || '*'
+      const month = this.month || '*'
+      const wday = this.wday || '*'
+      return `${min} ${hour} ${day} ${month} ${wday} ${this.buildCmd()}`
     },
 
     async loadJobs() {
@@ -598,7 +629,7 @@ function cronState() {
       if (index === null) return
       this.confirmDeleteIndex = null
       try {
-        const res = await fetch('/api/cron/' + index, { method: 'DELETE' })
+        const res = await fetch('/api/cron/' + (index + 1), { method: 'DELETE' })
         const json = await res.json()
         if (!res.ok) throw new Error(json.error || 'Delete failed')
         this.jobs.splice(index, 1)
@@ -613,58 +644,30 @@ function cronState() {
       this.addLoading = true
       this.addError = ''
       try {
-        const entry = [this.min || '*', this.hour || '*', this.day || '*', this.month || '*', this.wday || '*', this.cmd].join(' ')
+        const min = this.min || '*'
+        const hour = this.hour || '*'
+        const day = this.day || '*'
+        const month = this.month || '*'
+        const wday = this.wday || '*'
+        const cmd = this.buildCmd()
+        const entry = [min, hour, day, month, wday, cmd].join(' ')
         const res = await fetch('/api/cron/add', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            min: this.min || '*',
-            hour: this.hour || '*',
-            day: this.day || '*',
-            month: this.month || '*',
-            wday: this.wday || '*',
-            cmd: this.cmd
-          })
+          body: JSON.stringify({ min, hour, day, month, wday, cmd })
         })
         const json = await res.json()
         if (!res.ok) throw new Error(json.error || 'Failed to add cron job')
         this.jobs.push({ index: this.jobs.length, entry })
         this.cmd = ''
-        this.min = '*'
-        this.hour = '*'
-        this.day = '*'
-        this.month = '*'
-        this.wday = '*'
+        this.logFile = ''
+        this.logEnabled = false
         Alpine.store('app').showToast('Cron job added', 'success')
       } catch (e) {
         this.addError = e.message
         Alpine.store('app').showToast(e.message, 'error')
       } finally {
         this.addLoading = false
-      }
-    },
-
-    async scheduleBackup() {
-      if (!this.backupSrc.trim() || !this.backupDest.trim()) return
-      this.backupLoading = true
-      this.backupError = ''
-      try {
-        const schedule = this.backupSchedule || '0 0 * * *'
-        const res = await fetch('/api/cron/backup', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ src: this.backupSrc, dest: this.backupDest, schedule })
-        })
-        const json = await res.json()
-        if (!res.ok) throw new Error(json.error || 'Failed to schedule backup')
-        const entry = schedule + ' rsync -a ' + this.backupSrc + ' ' + this.backupDest
-        this.jobs.push({ index: this.jobs.length, entry })
-        Alpine.store('app').showToast('Backup job scheduled', 'success')
-      } catch (e) {
-        this.backupError = e.message
-        Alpine.store('app').showToast(e.message, 'error')
-      } finally {
-        this.backupLoading = false
       }
     }
   }

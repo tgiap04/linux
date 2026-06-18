@@ -17,6 +17,12 @@ async function getCrontab() {
   }
 }
 
+// GET /now — return current server hour and minute (respects system timezone)
+router.get('/now', (req, res) => {
+  const now = new Date()
+  res.json({ data: { hour: now.getHours(), min: now.getMinutes() } })
+})
+
 // GET /list — parse crontab -l, return [{index, entry}]
 router.get('/list', async (req, res) => {
   const raw = await getCrontab()
@@ -87,38 +93,6 @@ router.delete('/:index', async (req, res) => {
   }
 
   res.json({ data: { ok: true, removed: jobLines[idx - 1].entry.trim() } })
-})
-
-// POST /backup — body: {src, dest, schedule}
-// schedule: {min, hour, day, month, wday} — adds tar backup cron entry
-router.post('/backup', async (req, res) => {
-  const { src, dest, schedule } = req.body
-  if (!src) throw badRequest('src is required')
-  if (!dest) throw badRequest('dest is required')
-  if (!schedule || typeof schedule !== 'object') throw badRequest('schedule is required')
-
-  validate('path', src, 'src')
-  validate('path', dest, 'dest')
-
-  const { min = '0', hour = '2', day = '*', month = '*', wday = '*' } = schedule
-  for (const [field, val] of [['min', min], ['hour', hour], ['day', day], ['month', month], ['wday', wday]]) {
-    validate('cronField', String(val), field)
-  }
-
-  const tarCmd = `tar -czf "${dest}/backup-$(date +\\%Y\\%m\\%d-\\%H\\%M\\%S).tar.gz" "${src}"`
-  const entry = `${min} ${hour} ${day} ${month} ${wday} ${tarCmd}`
-
-  const current = await getCrontab()
-  const lines = current ? current.split('\n') : []
-
-  if (lines.some(l => l.trim() === entry)) {
-    return res.json({ data: { ok: true, added: false, reason: 'already exists' } })
-  }
-
-  const newCrontab = [...lines.filter(Boolean), entry, ''].join('\n')
-  await runShell(`echo ${JSON.stringify(newCrontab)} | crontab -`)
-
-  res.json({ data: { ok: true, added: true, entry } })
 })
 
 module.exports = router

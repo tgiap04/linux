@@ -81,37 +81,57 @@
   <div class="card">
     <div class="card-title">Add Cron Job</div>
 
-    <div class="form-row">
+    <!-- Time picker row -->
+    <div class="form-row" style="margin-bottom:1rem;">
       <div>
-        <label>Minute</label>
-        <input type="text" x-model="min" placeholder="*" />
+        <label>Time (HH:MM)</label>
+        <input type="time" x-model="timeValue" x-on:change="onTimeChange($event.target.value)" />
       </div>
       <div>
-        <label>Hour</label>
-        <input type="text" x-model="hour" placeholder="*" />
-      </div>
-      <div>
-        <label>Day</label>
-        <input type="text" x-model="day" placeholder="*" />
+        <label>Day of Month</label>
+        <select x-model="day">
+          <option value="*">Every day</option>
+          <template x-for="d in Array.from({length:31},(_,i)=>i+1)" :key="d">
+            <option :value="String(d)" x-text="d"></option>
+          </template>
+        </select>
       </div>
       <div>
         <label>Month</label>
-        <input type="text" x-model="month" placeholder="*" />
+        <select x-model="month">
+          <option value="*">Every month</option>
+          <template x-for="(m,i) in ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']" :key="i">
+            <option :value="String(i+1)" x-text="m"></option>
+          </template>
+        </select>
       </div>
       <div>
         <label>Weekday</label>
-        <input type="text" x-model="wday" placeholder="*" />
+        <select x-model="wday">
+          <option value="*">Every day</option>
+          <template x-for="(w,i) in ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']" :key="i">
+            <option :value="String(i)" x-text="w"></option>
+          </template>
+        </select>
       </div>
     </div>
 
-    <div>
+    <div style="margin-bottom:1rem;">
       <label>Command</label>
       <input type="text" x-model="cmd" placeholder="e.g. /usr/bin/backup.sh" />
     </div>
 
+    <div style="margin-bottom:1rem;">
+      <label style="display:flex; align-items:center; gap:0.5rem;">
+        <input type="checkbox" x-model="logEnabled" style="width:auto; margin:0;" />
+        Log output to file
+      </label>
+      <input type="text" x-show="logEnabled" x-model="logFile" placeholder="e.g. /var/log/mycron.log" style="margin-top:0.5rem;" />
+    </div>
+
     <div style="margin-bottom:1rem; padding:0.75rem; background:#f8fafc; border-radius:6px; border:1px solid var(--border);">
       <span style="font-size:0.8125rem; color:var(--text-muted); margin-right:0.5rem;">Preview:</span>
-      <code style="font-size:0.875rem;" x-text="`${min || '*'} ${hour || '*'} ${day || '*'} ${month || '*'} ${wday || '*'} ${cmd}`"></code>
+      <code style="font-size:0.875rem;" x-text="cronPreview()"></code>
     </div>
 
     <div x-show="addError" class="alert alert-error" x-text="addError"></div>
@@ -119,31 +139,6 @@
     <button class="btn btn-primary" x-on:click="addJob()" :disabled="addLoading || !cmd.trim()">
       <span x-show="addLoading" class="spinner" style="width:14px;height:14px;margin-right:0.25rem;"></span>
       <span x-show="!addLoading">Add Cron Job</span>
-    </button>
-  </div>
-
-  <!-- Setup Daily Backup Card -->
-  <div class="card">
-    <div class="card-title">Setup Backup Job</div>
-    <div class="form-row">
-      <div>
-        <label>Source Directory</label>
-        <input type="text" x-model="backupSrc" placeholder="e.g. /home/user/data" />
-      </div>
-      <div>
-        <label>Backup Destination</label>
-        <input type="text" x-model="backupDest" placeholder="e.g. /mnt/backup" />
-      </div>
-    </div>
-    <div>
-      <label>Schedule (cron expression)</label>
-      <input type="text" x-model="backupSchedule" placeholder="0 0 * * *" />
-    </div>
-    <div x-show="backupError" class="alert alert-error" x-text="backupError"></div>
-    <button class="btn btn-primary" x-on:click="scheduleBackup()"
-      :disabled="backupLoading || !backupSrc.trim() || !backupDest.trim()">
-      <span x-show="backupLoading" class="spinner" style="width:14px;height:14px;margin-right:0.25rem;"></span>
-      <span x-show="!backupLoading">Schedule Backup</span>
     </button>
   </div>
 
