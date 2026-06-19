@@ -2,8 +2,9 @@
 #include "error_handler.h"
 #include <linux/ip.h>
 #include <linux/tcp.h>
-#include <linux/checksum.h>
-#include <net/checksum.h>
+#include <net/ip.h>
+#include <net/tcp.h>
+#include <asm/checksum.h>
 
 int covert_tcp_embed_byte(struct sk_buff *skb, u8 byte)
 {

@@ -1,0 +1,1 @@
+savedcmd_covert.ko := ld -r -EL  -maarch64elf -z noexecstack --no-warn-rwx-segments --build-id=sha1  -T /usr/src/linux-headers-7.0.0-22-generic/scripts/module.lds -o covert.ko covert.o covert.mod.o .module-common.o

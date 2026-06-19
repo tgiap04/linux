@@ -114,6 +114,7 @@ Scapy bắt gói TCP/UDP port 9999
 ### Chi tiết Embedding
 
 **TCP — nhúng vào TCP Sequence Number:**
+
 ```
 TCP Seq# gốc:     0xABCD1234
                   10101011 11001101 00010010 00110100
@@ -123,6 +124,7 @@ TCP Seq# đã modify: 0xABCD1248  (byte 0x48 = 'H' được nhúng vào)
 ```
 
 **UDP — nhúng vào IP Identification:**
+
 ```
 IP ID gốc:     0x3F00
                00111111 00000000
@@ -235,7 +237,7 @@ package-hiding/
 ## Module Parameters
 
 | Parameter | Kiểu | Mặc định | Mô tả |
-|-----------|------|----------|-------|
+| --- | --- | --- | --- |
 | `target_port` | int | 9999 | Port đích cần can thiệp |
 | `target_ip` | charp | "10.0.2.15" | IP đích (0 hoặc để trống = mọi IP) |
 
@@ -244,7 +246,7 @@ package-hiding/
 ## Troubleshooting
 
 | Vấn đề | Giải pháp |
-|--------|-----------|
+| --- | --- |
 | `insmod: ERROR: could not insert module` | Kiểm tra `dmesg` — thường do sai kernel headers |
 | `make: *** /lib/modules/.../build: No such file` | Cài `linux-headers-$(uname -r)` |
 | Receiver không nhận được data | Kiểm tra `dmesg` có "target packet detected" không |

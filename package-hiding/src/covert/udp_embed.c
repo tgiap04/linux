@@ -2,7 +2,7 @@
 #include "error_handler.h"
 #include <linux/ip.h>
 #include <linux/udp.h>
-#include <linux/checksum.h>
+#include <net/ip.h>
 
 int covert_udp_embed_byte(struct sk_buff *skb, u8 byte)
 {

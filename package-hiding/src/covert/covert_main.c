@@ -6,6 +6,7 @@
 #include <linux/tcp.h>
 #include <linux/udp.h>
 #include <linux/version.h>
+#include <linux/inet.h>
 
 #include "packet_parser.h"
 #include "tcp_embed.h"
