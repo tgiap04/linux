@@ -95,6 +95,19 @@ int covert_framing_set_message(const u8 *msg, size_t len)
 	return 0;
 }
 
+int covert_framing_clear(void)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&g_framing_lock, flags);
+	g_has_pending = 0;
+	g_framing.state = COVERT_FRAM_IDLE;
+	spin_unlock_irqrestore(&g_framing_lock, flags);
+
+	pr_info("covert: message queue cleared\n");
+	return 0;
+}
+
 int covert_framing_has_pending(void)
 {
 	return g_has_pending;

@@ -7,8 +7,8 @@
 #define COVERT_MARKER_START_BYTE0  0xFF
 #define COVERT_MARKER_START_BYTE1  0x00
 
-/* End marker: 0xFF 0xFF — signals end of covert message */
-#define COVERT_MARKER_END_BYTE0    0xFF
+/* End marker: 0x00 0xFF — signals end of covert message (different from start) */
+#define COVERT_MARKER_END_BYTE0    0x00
 #define COVERT_MARKER_END_BYTE1    0xFF
 
 /* Marker size in bytes */
@@ -58,6 +58,12 @@ int covert_framing_next_byte(struct covert_framing_ctx *ctx, u8 *out);
  * Returns 0 on success, -BUSY if a message is already queued.
  */
 int covert_framing_set_message(const u8 *msg, size_t len);
+
+/**
+ * covert_framing_clear - Clear the pending message queue.
+ * Returns 0 on success.
+ */
+int covert_framing_clear(void);
 
 /**
  * covert_framing_has_pending - Check if there's a pending message.

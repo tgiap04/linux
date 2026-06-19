@@ -16,14 +16,10 @@ int covert_tcp_embed_byte(struct sk_buff *skb, u8 byte)
 	if (covert_skb_linearize(skb) < 0)
 		return -1;
 
-	iph = covert_skb_header(skb, 0, sizeof(struct iphdr));
-	if (!iph)
-		return -1;
-
+	/* Use skb->data directly (not skb_header_pointer which copies) */
+	iph = (struct iphdr *)skb->data;
 	ip_hdr_len = iph->ihl * 4;
-	tcph = covert_skb_header(skb, ip_hdr_len, sizeof(struct tcphdr));
-	if (!tcph)
-		return -1;
+	tcph = (struct tcphdr *)(skb->data + ip_hdr_len);
 
 	/* Embed byte into lower 8 bits of TCP sequence number */
 	orig_seq = ntohl(tcph->seq);

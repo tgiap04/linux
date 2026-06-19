@@ -12,9 +12,8 @@ int covert_udp_embed_byte(struct sk_buff *skb, u8 byte)
 	if (covert_skb_linearize(skb) < 0)
 		return -1;
 
-	iph = covert_skb_header(skb, 0, sizeof(struct iphdr));
-	if (!iph)
-		return -1;
+	/* Use skb->data directly (not skb_header_pointer which copies) */
+	iph = (struct iphdr *)skb->data;
 
 	/* Embed byte into lower 8 bits of IP Identification field */
 	orig_id = ntohs(iph->id);

@@ -18,6 +18,10 @@
 #define COVERT_DEFAULT_PORT  9999
 #define COVERT_DEFAULT_IP    "10.0.2.15"
 #define COVERT_LOG_RATE_LIMIT 10  /* Max log messages per second */
+#define COVERT_MSG_MAX_LEN   1024
+
+/* sysfs interface */
+static struct kobject *covert_kobj;
 
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Covert Channel Research");
@@ -75,6 +79,67 @@ static void covert_log(const char *fmt, ...)
 		log_count++;
 	}
 }
+
+/*
+ * Sysfs interface for writing covert messages.
+ * Usage: echo "SECRET" > /sys/kernel/covert/message
+ */
+static ssize_t covert_message_store(struct kobject *kobj,
+				    struct kobj_attribute *attr,
+				    const char *buf, size_t count)
+{
+	char msg[COVERT_MSG_MAX_LEN];
+	size_t len;
+
+	if (count >= sizeof(msg))
+		len = sizeof(msg) - 1;
+	else
+		len = count;
+
+	/* Copy and strip newline */
+	memcpy(msg, buf, len);
+	msg[len] = '\0';
+	if (len > 0 && msg[len - 1] == '\n')
+		msg[len - 1] = '\0';
+
+	pr_info("covert: received message '%s' (%zu bytes)\n", msg, len);
+
+	/* Queue message for embedding */
+	if (covert_framing_set_message((const u8 *)msg, len) < 0) {
+		pr_warn("covert: message already queued, dropping\n");
+		return -EBUSY;
+	}
+
+	return count;
+}
+
+static ssize_t covert_message_show(struct kobject *kobj,
+				   struct kobj_attribute *attr,
+				   char *buf)
+{
+	return sysfs_emit(buf, "covert: write a message to this file to send\n");
+}
+
+static struct kobj_attribute covert_message_attr =
+	__ATTR(message, 0644, covert_message_show, covert_message_store);
+
+static ssize_t covert_clear_store(struct kobject *kobj,
+				  struct kobj_attribute *attr,
+				  const char *buf, size_t count)
+{
+	covert_framing_clear();
+	return count;
+}
+
+static ssize_t covert_clear_show(struct kobject *kobj,
+				 struct kobj_attribute *attr,
+				 char *buf)
+{
+	return sysfs_emit(buf, "write '1' to clear message queue\n");
+}
+
+static struct kobj_attribute covert_clear_attr =
+	__ATTR(clear, 0644, covert_clear_show, covert_clear_store);
 
 /*
  * Hook callback for outgoing packets (LOCAL_OUT / POST_ROUTING).
@@ -146,6 +211,26 @@ static int __init covert_init(void)
 	pr_info("covert: target = %s:%d\n",
 		target_ip ? target_ip : "any", target_port);
 
+	/* Create sysfs interface: /sys/kernel/covert/message */
+	covert_kobj = kobject_create_and_add("covert", kernel_kobj);
+	if (!covert_kobj) {
+		pr_err("covert: failed to create sysfs kobject\n");
+		return -ENOMEM;
+	}
+
+	if (sysfs_create_file(covert_kobj, &covert_message_attr.attr)) {
+		pr_err("covert: failed to create sysfs file\n");
+		kobject_put(covert_kobj);
+		return -ENOMEM;
+	}
+
+	if (sysfs_create_file(covert_kobj, &covert_clear_attr.attr)) {
+		pr_err("covert: failed to create sysfs clear file\n");
+		sysfs_remove_file(covert_kobj, &covert_message_attr.attr);
+		kobject_put(covert_kobj);
+		return -ENOMEM;
+	}
+
 	/* Register outgoing hook */
 	nf_hook_out.hook     = covert_hook_out;
 	nf_hook_out.hooknum  = NF_INET_LOCAL_OUT;
@@ -199,6 +284,11 @@ static void __exit covert_exit(void)
 	nf_unregister_hook(&nf_hook_out);
 	nf_unregister_hook(&nf_hook_in);
 #endif
+
+	/* Remove sysfs interface */
+	sysfs_remove_file(covert_kobj, &covert_clear_attr.attr);
+	sysfs_remove_file(covert_kobj, &covert_message_attr.attr);
+	kobject_put(covert_kobj);
 
 	pr_info("covert: module unloaded, hooks removed\n");
 }

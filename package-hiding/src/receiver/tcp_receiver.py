@@ -54,6 +54,19 @@ class TcpCovertReceiver:
 
         byte_val = hidden_byte
 
+        # Dedup: skip identical seq+dport within 50ms (loopback duplicate fix)
+        import time
+        now = time.time()
+        pkt_key = (pkt[TCP].seq, pkt[TCP].dport)
+        if hasattr(self, '_seen_pkts') and pkt_key in self._seen_pkts:
+            if now - self._seen_pkts[pkt_key] < 0.05:
+                return
+        if not hasattr(self, '_seen_pkts'):
+            self._seen_pkts = {}
+        self._seen_pkts[pkt_key] = now
+        # Cleanup old entries
+        self._seen_pkts = {k: v for k, v in self._seen_pkts.items() if now - v < 1}
+
         if self.verbose:
             src_ip = pkt[IP].src
             src_port = pkt[TCP].sport
@@ -81,21 +94,21 @@ class TcpCovertReceiver:
                     return
             return
 
-        # Currently receiving — check for end marker
-        if byte_val == 0xFF:
+        # Currently receiving — check for end marker 0x00 0xFF
+        if byte_val == 0x00:
             self._awaiting_end_second = True
             return
 
         if hasattr(self, '_awaiting_end_second') and self._awaiting_end_second:
             if byte_val == 0xFF:
-                # End marker received
+                # End marker received (0x00 0xFF)
                 self.receiving = False
                 self._awaiting_end_second = False
                 self._deliver_message()
                 return
             else:
-                # False alarm — append the buffered 0xFF and this byte
-                self.buffer.append(0xFF)
+                # False alarm — append the buffered 0x00 and this byte
+                self.buffer.append(0x00)
                 self.buffer.append(byte_val)
                 self._awaiting_end_second = False
                 return
@@ -126,6 +139,7 @@ class TcpCovertReceiver:
 
         try:
             sniff(
+                iface="lo",
                 filter=bpf_filter,
                 prn=self.process_packet,
                 store=0,  # Don't store packets in memory
