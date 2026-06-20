@@ -50,8 +50,21 @@
     <div class="spinner"></div>
   </div>
 
+  <!-- Module not loaded state -->
+  <div x-show="!loading && status && status.moduleLoaded === false" class="card" style="border-color: var(--warning); background: #fffbef;">
+    <div class="card-title" style="color: var(--warning);">&#9888; Kernel Module Not Loaded</div>
+    <p style="color: var(--text-muted); font-size: 0.875rem; margin-bottom: 1rem;">
+      The <code>ubuntu_firewall.ko</code> kernel module is not currently loaded. On your Linux VM, run:
+    </p>
+    <code style="display:block; background: #f1f5f9; padding: 0.75rem 1rem; border-radius: 6px; font-size: 0.875rem; margin-bottom: 0.75rem; color: var(--text-primary);">$ cd kernel &amp;&amp; make<br>$ sudo insmod ubuntu_firewall.ko</code>
+    <p style="color: var(--text-muted); font-size: 0.8125rem; margin-bottom: 1rem;">
+      Then click <strong>Refresh</strong> below.
+    </p>
+    <button class="btn btn-primary btn-sm" x-on:click="loadStatus()">Refresh</button>
+  </div>
+
   <!-- Status section -->
-  <div class="card" style="margin-bottom:1rem;" x-show="status">
+  <div class="card" style="margin-bottom:1rem;" x-show="status && status.moduleLoaded !== false">
     <div class="card-title">Module Status</div>
 
     <!-- Status badges -->
@@ -79,7 +92,7 @@
   </div>
 
   <!-- Reject Ports section -->
-  <div class="card" style="margin-bottom:1rem;">
+  <div class="card" style="margin-bottom:1rem;" x-show="status && status.moduleLoaded !== false">
     <div class="card-title">Reject Ports</div>
     <p style="color:var(--text-muted); font-size:0.875rem; margin-bottom:0.75rem;">
       Comma-separated list of ports to reject (1-65535). Leave empty to allow all.
@@ -97,7 +110,7 @@
   </div>
 
   <!-- Blocked Events / dmesg Logs section -->
-  <div class="card">
+  <div class="card" x-show="status && status.moduleLoaded !== false">
     <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem;">
       <div class="card-title" style="margin-bottom:0; border-bottom:none; padding-bottom:0;">Blocked Events</div>
       <button class="btn btn-secondary btn-sm" x-on:click="loadLogs()" :disabled="logLoading">

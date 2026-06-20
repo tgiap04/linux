@@ -1,12 +1,13 @@
 obj-m := ubuntu_firewall.o
 
 KDIR := /lib/modules/$(shell uname -r)/build
+PWD  := $(CURDIR)
 
 all:
-	make -C $(KDIR) M=$(PWD) modules
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
 
 modules_install:
-	make -C $(KDIR) M=$(PWD) modules_install
+	$(MAKE) -C $(KDIR) M=$(PWD) modules_install
 
 clean:
-	make -C $(KDIR) M=$(PWD) clean
+	$(MAKE) -C $(KDIR) M=$(PWD) clean

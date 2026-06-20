@@ -230,11 +230,18 @@ function firewallState() {
     async loadStatus() {
       this.loading = true
       this.error = ''
+      this.status = null
       try {
         const d = await Alpine.store('app').api('GET', '/firewall/status')
         this.status = d
       } catch (e) {
-        if (e.message !== 'Sudo cancelled by user') this.error = e.message
+        if (e.message !== 'Sudo cancelled by user') {
+          if (e.message && e.message.includes('module is not loaded')) {
+            this.status = { moduleLoaded: false }
+          } else {
+            this.error = e.message
+          }
+        }
       } finally {
         this.loading = false
       }
