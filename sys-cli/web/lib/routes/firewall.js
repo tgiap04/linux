@@ -11,6 +11,7 @@ const SYSFS_ATTRS = {
 }
 
 // Read a single sysfs attribute; returns null if the file doesn't exist.
+// Re-throws sudo_required so the frontend can show the password modal.
 async function readAttr(password, name) {
   const path = SYSFS_ATTRS[name]
   if (!path) return null
@@ -18,6 +19,7 @@ async function readAttr(password, name) {
     const { stdout } = await runSudo(password, 'cat', [path])
     return stdout.trim()
   } catch (err) {
+    if (err.sudoRequired) throw err
     // Module not loaded — path doesn't exist
     return null
   }
@@ -50,27 +52,32 @@ function parseDmesgLine(line) {
 router.get('/status', async (req, res) => {
   const pw = req.sudoPassword
 
-  const [enabled, drop_icmp, reject_ports] = await Promise.all([
-    readAttr(pw, 'enabled'),
-    readAttr(pw, 'drop_icmp'),
-    readAttr(pw, 'reject_ports'),
-  ])
+  try {
+    const [enabled, drop_icmp, reject_ports] = await Promise.all([
+      readAttr(pw, 'enabled'),
+      readAttr(pw, 'drop_icmp'),
+      readAttr(pw, 'reject_ports'),
+    ])
 
-  // If none of the attrs exist, the module is not loaded
-  if (enabled === null && drop_icmp === null && reject_ports === null) {
-    return res.status(503).json({
-      error: 'ubuntu_firewall kernel module is not loaded (sysfs path /sys/firewall not found)',
+    // If none of the attrs exist, the module is not loaded
+    if (enabled === null && drop_icmp === null && reject_ports === null) {
+      return res.status(503).json({
+        error: 'ubuntu_firewall kernel module is not loaded (sysfs path /sys/firewall not found)',
+      })
+    }
+
+    res.json({
+      data: {
+        enabled: enabled !== null ? enabled : '0',
+        drop_icmp: drop_icmp !== null ? drop_icmp : '0',
+        reject_ports: reject_ports !== null ? reject_ports : '',
+        status_raw: { enabled, drop_icmp, reject_ports },
+      },
     })
+  } catch (err) {
+    if (err.sudoRequired) throw err
+    throw err
   }
-
-  res.json({
-    data: {
-      enabled: enabled !== null ? enabled : '0',
-      drop_icmp: drop_icmp !== null ? drop_icmp : '0',
-      reject_ports: reject_ports !== null ? reject_ports : '',
-      status_raw: { enabled, drop_icmp, reject_ports },
-    },
-  })
 })
 
 // GET /logs — fetch dmesg, filter for ubuntu_firewall entries, parse timestamps
@@ -121,6 +128,14 @@ router.post('/ports', async (req, res) => {
   await runSudo(pw, 'bash', ['-c', `echo "${validPorts}" > ${path}`])
 
   res.json({ data: { ok: true, ports: validPorts } })
+})
+
+// POST /ports/clear — remove all rejected ports
+router.post('/ports/clear', async (req, res) => {
+  const pw = req.sudoPassword
+  const path = SYSFS_ATTRS.reject_ports
+  await runSudo(pw, 'bash', ['-c', `echo -n "" > ${path}`])
+  res.json({ data: { ok: true, ports: '' } })
 })
 
 module.exports = router

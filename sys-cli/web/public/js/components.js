@@ -264,7 +264,13 @@ function firewallState() {
       if (!this.portsInput.trim()) return
       this.portsLoading = true
       try {
-        const result = await Alpine.store('app').api('POST', '/firewall/ports', { ports: this.portsInput.trim() })
+        // Merge new ports with existing list, deduplicate
+        const existing = (this.status && this.status.reject_ports)
+          ? this.status.reject_ports.split(',').map(p => p.trim()).filter(Boolean)
+          : []
+        const incoming = this.portsInput.trim().split(',').map(p => p.trim()).filter(Boolean)
+        const merged = [...new Set([...existing, ...incoming])].join(',')
+        const result = await Alpine.store('app').api('POST', '/firewall/ports', { ports: merged })
         if (this.status) this.status.reject_ports = result.ports
         this.portsInput = ''
         Alpine.store('app').showToast('Ports updated', 'success')
@@ -272,6 +278,24 @@ function firewallState() {
         if (e.message !== 'Sudo cancelled by user') Alpine.store('app').showToast(e.message, 'error')
       } finally {
         this.portsLoading = false
+      }
+    },
+
+    async removePort(port) {
+      if (!this.status || !this.status.reject_ports) return
+      const remaining = this.status.reject_ports.split(',').map(p => p.trim()).filter(p => p && p !== port)
+      try {
+        if (remaining.length === 0) {
+          // Clear all — write empty via direct fetch since api() rejects empty body
+          await Alpine.store('app').api('POST', '/firewall/ports/clear', {})
+          if (this.status) this.status.reject_ports = ''
+        } else {
+          const result = await Alpine.store('app').api('POST', '/firewall/ports', { ports: remaining.join(',') })
+          if (this.status) this.status.reject_ports = result.ports
+        }
+        Alpine.store('app').showToast('Port ' + port + ' removed', 'success')
+      } catch (e) {
+        if (e.message !== 'Sudo cancelled by user') Alpine.store('app').showToast(e.message, 'error')
       }
     },
 

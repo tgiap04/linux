@@ -97,15 +97,26 @@
     <p style="color:var(--text-muted); font-size:0.875rem; margin-bottom:0.75rem;">
       Comma-separated list of ports to reject (1-65535). Leave empty to allow all.
     </p>
-    <div style="display:flex; gap:0.5rem; align-items:flex-start; flex-wrap:wrap; margin-bottom:0.5rem;">
+    <div style="display:flex; gap:0.5rem; align-items:stretch; flex-wrap:wrap; margin-bottom:0.5rem;">
       <input type="text" x-model="portsInput" placeholder="e.g. 21,23,8080" style="flex:1; min-width:200px;" />
-      <button class="btn btn-primary btn-sm" x-on:click="updatePorts()" :disabled="portsLoading || !portsInput.trim()">
+      <button class="btn btn-primary btn-sm" x-on:click="updatePorts()" :disabled="portsLoading || !portsInput.trim()" style="align-self:stretch;">
         <span x-show="portsLoading" class="spinner" style="width:14px;height:14px;"></span>
         <span x-show="!portsLoading">Update Ports</span>
       </button>
     </div>
-    <div x-show="status && status.reject_ports" style="font-size:0.8125rem; color:var(--text-muted);">
-      Current ports: <code style="background:#f1f5f9; padding:0.1rem 0.4rem; border-radius:4px;" x-text="status.reject_ports || '(none)'"></code>
+    <div x-show="status" style="font-size:0.8125rem; color:var(--text-muted);">
+      <span x-show="!status || !status.reject_ports">No ports blocked.</span>
+      <template x-if="status && status.reject_ports">
+        <div style="display:flex; flex-wrap:wrap; gap:0.35rem; align-items:center;">
+          <span style="margin-right:0.25rem;">Blocked:</span>
+          <template x-for="port in (status.reject_ports ? status.reject_ports.split(',') : [])" :key="port">
+            <span style="display:inline-flex; align-items:center; gap:0.25rem; background:#f1f5f9; border-radius:4px; padding:0.1rem 0.5rem;">
+              <code x-text="port"></code>
+              <button x-on:click="removePort(port)" style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:0.75rem;padding:0;line-height:1;" title="Remove">✕</button>
+            </span>
+          </template>
+        </div>
+      </template>
     </div>
   </div>
 

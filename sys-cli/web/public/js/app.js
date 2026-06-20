@@ -66,12 +66,10 @@ function sysApp() {
         } finally {
           this.loading = false
         }
+        // Alpine's x-html directive auto-initializes the injected tree (x-data/x-init).
+        // Do NOT call Alpine.initTree() here — it would double-initialize the component,
+        // creating a second orphaned instance that the template never renders.
       }
-      // After x-html updates the DOM, tell Alpine to initialize any new components
-      this.$nextTick(() => {
-        const slot = document.querySelector('[x-show="activeModule === \'' + name + '\'"]')
-        if (slot) Alpine.initTree(slot)
-      })
     },
 
     showToast(msg, type) {

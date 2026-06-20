@@ -4,8 +4,8 @@ A modular interactive shell script for managing Linux systems from the terminal.
 
 ## Modules
 
-| # | Module | What it manages |
-|---|--------|----------------|
+| \# | Module | What it manages |
+| --- | --- | --- |
 | 1 | File & Directory | Batch create/delete/move, find large files, chmod/chown |
 | 2 | Cron Jobs | Add/list/delete cron jobs, schedule daily backups |
 | 3 | System Time | Timezone, NTP sync (timedatectl / chrony) |
@@ -90,6 +90,8 @@ node --version   # should be >= 18
 cd web
 npm install
 node server.js
+python3 -m http.server 5000
+nc -zv 192.168.64.3 5000
 ```
 
 Default port is **3000**. Access at `http://localhost:3000` or `http://<your-server-ip>:3000`.
@@ -132,7 +134,7 @@ Navigate the menu by typing the option number and pressing Enter. Choose **Back*
 ## Ubuntu-specific notes
 
 | Feature | Tool used on Ubuntu |
-|---------|-------------------|
+| --- | --- |
 | Package management | `apt-get` (auto-detected) |
 | Timezone | `timedatectl` (systemd) |
 | NTP sync | `systemd-timesyncd` via `timedatectl set-ntp true` |

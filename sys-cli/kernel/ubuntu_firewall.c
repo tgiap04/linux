@@ -78,6 +78,15 @@ static int parse_reject_ports(const char *buf, size_t count)
 		goto out;
 
 	tok = strim(copy);
+	/* Empty string clears the port list */
+	if (!*tok) {
+		ret = 0;
+		mutex_lock(&reject_ports_lock);
+		swap(reject_ports, new_ports);
+		atomic_set(&reject_ports_cnt, 0);
+		mutex_unlock(&reject_ports_lock);
+		goto out_copy;
+	}
 	while (tok && new_cnt < MAX_PORTS) {
 		char *comma = strchr(tok, ',');
 		int port;
@@ -199,8 +208,10 @@ static struct attribute *firewall_attrs[] = {
 	&reject_ports_attr.attr, &status_attr.attr, NULL,
 };
 
+/* Root group — attrs appear directly under /sys/firewall/ */
+
 static struct attribute_group firewall_attr_group = {
-	.name = "firewall", .attrs = firewall_attrs,
+	.attrs = firewall_attrs,
 };
 
 /* ── Netfilter hook ─────────────────────────────────────────────────────── */
