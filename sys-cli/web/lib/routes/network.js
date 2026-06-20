@@ -1,7 +1,7 @@
 'use strict'
 
 const router = require('express').Router()
-const { run, runSudo, validate, badRequest } = require('../shell')
+const { run, validate, badRequest } = require('../shell')
 
 // Parse `ss -tulpn` output into structured array
 function parseSockets(stdout) {
@@ -153,38 +153,6 @@ router.post('/dns', async (req, res) => {
   } catch (getentErr) {
     throw Object.assign(new Error(`DNS lookup failed for "${target}"`), { status: 502 })
   }
-})
-
-// POST /firewall — detect and query firewall tool (requires sudo)
-router.post('/firewall', async (req, res) => {
-  const password = req.sudoPassword
-  const tools = [
-    { name: 'ufw',          cmd: 'ufw',          args: ['status', 'verbose'] },
-    { name: 'firewall-cmd', cmd: 'firewall-cmd',  args: ['--state'] },
-    { name: 'iptables',     cmd: 'iptables',      args: ['-L', '-n', '--line-numbers'] },
-    { name: 'nft',          cmd: 'nft',           args: ['list', 'ruleset'] },
-  ]
-
-  for (const { name, cmd, args } of tools) {
-    try {
-      // Check if binary exists first (without sudo)
-      await run('which', [cmd])
-    } catch {
-      continue // not installed
-    }
-
-    try {
-      const { stdout } = await runSudo(password, cmd, args)
-      return res.json({ data: { tool: name, output: stdout } })
-    } catch (err) {
-      if (err.status === 400 && err.message === 'sudo_required') throw err
-      if (err.sudoIncorrect) throw Object.assign(new Error('incorrect_password'), { status: 401 })
-      // Tool errored but is installed — return its output
-      return res.json({ data: { tool: name, output: err.stderr || err.message || '' } })
-    }
-  }
-
-  res.json({ data: { tool: null, output: 'No firewall tool detected' } })
 })
 
 module.exports = router

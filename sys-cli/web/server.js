@@ -84,6 +84,7 @@ app.use('/api/time',      require('./lib/routes/time'))
 app.use('/api/packages',  require('./lib/routes/packages'))
 app.use('/api/processes', require('./lib/routes/processes'))
 app.use('/api/network',   require('./lib/routes/network'))
+app.use('/api/firewall',  require('./lib/routes/firewall'))
 
 // --- SPA fallback — serve index.html for non-API routes ---
 app.get('*', (req, res) => {

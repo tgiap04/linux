@@ -183,16 +183,7 @@ network_list_fds() {
 
 network_firewall_status() {
     header "Firewall Status"
-    if command_exists ufw; then
-        info "UFW:"; ufw status verbose 2>/dev/null
-    elif command_exists firewall-cmd; then
-        info "firewalld:"; firewall-cmd --state 2>/dev/null; firewall-cmd --list-all 2>/dev/null
-    elif command_exists iptables; then
-        info "iptables:"; iptables -L -n -v 2>/dev/null || warn "iptables requires elevated privileges"
-    elif command_exists nft; then
-        info "nftables:"; nft list ruleset 2>/dev/null || warn "nft requires elevated privileges"
-    else
-        warn "No supported firewall tool found (ufw, firewall-cmd, iptables, nft)"
-    fi
+    info "Native iptables/ufw/firewalld status has moved to the Kernel Firewall module."
+    info "Select 'Kernel Firewall' (option 7) from the main menu to manage the ubuntu_firewall module."
     press_enter
 }

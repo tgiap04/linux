@@ -256,19 +256,4 @@
     </div>
   </div>
 
-  <!-- Tab: Firewall -->
-  <div x-show="activeTab === 'firewall'">
-    <div class="card">
-      <div class="card-title">Firewall Status</div>
-      <button class="btn btn-primary" x-on:click="checkFirewall()" :disabled="fwLoading">
-        <span x-show="fwLoading" class="spinner" style="width:14px;height:14px;"></span>
-        <span x-show="!fwLoading">Check Status</span>
-      </button>
-      <div x-show="firewallOutput" style="margin-top:1rem;">
-        <div class="log-panel" x-text="firewallOutput"></div>
-      </div>
-      <div x-show="fwError" class="alert alert-error" style="margin-top:0.75rem;" x-text="fwError"></div>
-    </div>
-  </div>
-
 </div>

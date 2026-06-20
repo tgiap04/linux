@@ -102,8 +102,7 @@ function networkState() {
       { id: 'sockets', label: 'Ports' },
       { id: 'interfaces', label: 'Interfaces' },
       { id: 'routes', label: 'Routes' },
-      { id: 'ping', label: 'Ping/DNS' },
-      { id: 'firewall', label: 'Firewall' }
+      { id: 'ping', label: 'Ping/DNS' }
     ],
     sockets: [],
     interfaces: [],
@@ -121,9 +120,6 @@ function networkState() {
     dnsResult: null,
     dnsLoading: false,
     dnsError: '',
-    firewallOutput: '',
-    fwLoading: false,
-    fwError: '',
 
     async init() {
       await this.loadSockets()
@@ -214,17 +210,73 @@ function networkState() {
       }
     },
 
-    async checkFirewall() {
-      this.fwLoading = true
-      this.firewallOutput = ''
-      this.fwError = ''
+  }
+}
+
+function firewallState() {
+  return {
+    status: null,
+    logs: [],
+    loading: false,
+    error: '',
+    logLoading: false,
+    portsInput: '',
+    portsLoading: false,
+
+    async init() {
+      await this.loadStatus()
+    },
+
+    async loadStatus() {
+      this.loading = true
+      this.error = ''
       try {
-        const d = await Alpine.store('app').api('POST', '/network/firewall')
-        this.firewallOutput = (d.tool ? '[' + d.tool + ']\n' : '') + (d.output || '(no output)')
+        const d = await Alpine.store('app').api('GET', '/firewall/status')
+        this.status = d
       } catch (e) {
-        if (e.message !== 'Sudo cancelled by user') this.fwError = e.message
+        if (e.message !== 'Sudo cancelled by user') this.error = e.message
       } finally {
-        this.fwLoading = false
+        this.loading = false
+      }
+    },
+
+    async toggleField(field) {
+      if (!this.status) return
+      const current = this.status[field] === 1 || this.status[field] === '1' ? 1 : 0
+      const newVal = current ? 0 : 1
+      try {
+        await Alpine.store('app').api('POST', '/firewall/toggle', { field, value: newVal })
+        this.status[field] = newVal
+        Alpine.store('app').showToast(field + ' set to ' + (newVal ? 'ON' : 'OFF'), 'success')
+      } catch (e) {
+        if (e.message !== 'Sudo cancelled by user') Alpine.store('app').showToast(e.message, 'error')
+      }
+    },
+
+    async updatePorts() {
+      if (!this.portsInput.trim()) return
+      this.portsLoading = true
+      try {
+        const result = await Alpine.store('app').api('POST', '/firewall/ports', { ports: this.portsInput.trim() })
+        if (this.status) this.status.reject_ports = result.ports
+        this.portsInput = ''
+        Alpine.store('app').showToast('Ports updated', 'success')
+      } catch (e) {
+        if (e.message !== 'Sudo cancelled by user') Alpine.store('app').showToast(e.message, 'error')
+      } finally {
+        this.portsLoading = false
+      }
+    },
+
+    async loadLogs() {
+      this.logLoading = true
+      try {
+        const d = await Alpine.store('app').api('GET', '/firewall/logs')
+        this.logs = (d.logs || []).slice(0, 50)
+      } catch (e) {
+        if (e.message !== 'Sudo cancelled by user') Alpine.store('app').showToast(e.message, 'error')
+      } finally {
+        this.logLoading = false
       }
     }
   }

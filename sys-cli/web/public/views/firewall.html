@@ -1,0 +1,138 @@
+<div x-data="firewallState()" x-init="init()">
+
+  <!-- Header -->
+  <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:1.5rem;">
+    <h1 style="font-size:1.5rem; font-weight:700; color:var(--text-primary); flex:1;">Kernel Firewall</h1>
+  </div>
+
+  <!-- Description -->
+  <p style="color:var(--text-muted); font-size:0.875rem; margin-bottom:1.25rem;">
+    Manages the ubuntu_firewall kernel module. Equivalent commands:
+    <span x-data="{ copied: false }" style="display:inline-flex; align-items:center; gap:0.35rem;">
+      <code style="background:#f1f5f9; padding:0.15rem 0.5rem; border-radius:4px; font-size:0.8125rem;">insmod</code>
+      <button class="btn btn-sm btn-secondary" style="padding:0.15rem 0.5rem; font-size:0.75rem; line-height:1.4;"
+        x-on:click="copyText('insmod', () => { copied = true; setTimeout(() => copied = false, 1500) })">
+        <span x-show="!copied">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </span>
+        <span x-show="copied" style="color:#16a34a;">&#10003;</span>
+      </button>
+    </span>
+    /
+    <span x-data="{ copied: false }" style="display:inline-flex; align-items:center; gap:0.35rem;">
+      <code style="background:#f1f5f9; padding:0.15rem 0.5rem; border-radius:4px; font-size:0.8125rem;">rmmod</code>
+      <button class="btn btn-sm btn-secondary" style="padding:0.15rem 0.5rem; font-size:0.75rem; line-height:1.4;"
+        x-on:click="copyText('rmmod', () => { copied = true; setTimeout(() => copied = false, 1500) })">
+        <span x-show="!copied">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </span>
+        <span x-show="copied" style="color:#16a34a;">&#10003;</span>
+      </button>
+    </span>
+    /
+    <span x-data="{ copied: false }" style="display:inline-flex; align-items:center; gap:0.35rem;">
+      <code style="background:#f1f5f9; padding:0.15rem 0.5rem; border-radius:4px; font-size:0.8125rem;">dmesg</code>
+      <button class="btn btn-sm btn-secondary" style="padding:0.15rem 0.5rem; font-size:0.75rem; line-height:1.4;"
+        x-on:click="copyText('dmesg', () => { copied = true; setTimeout(() => copied = false, 1500) })">
+        <span x-show="!copied">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </span>
+        <span x-show="copied" style="color:#16a34a;">&#10003;</span>
+      </button>
+    </span>
+  </p>
+
+  <!-- Error -->
+  <div x-show="error" class="alert alert-error" x-text="error"></div>
+
+  <!-- Loading -->
+  <div x-show="loading && !status" class="loading-overlay" style="padding:3rem;">
+    <div class="spinner"></div>
+  </div>
+
+  <!-- Status section -->
+  <div class="card" style="margin-bottom:1rem;" x-show="status">
+    <div class="card-title">Module Status</div>
+
+    <!-- Status badges -->
+    <div style="display:flex; gap:0.75rem; flex-wrap:wrap; margin-bottom:1rem;">
+      <span class="badge" :class="status ? 'badge-up' : 'badge-warning'" style="font-size:0.875rem;">
+        Module: <span x-text="status ? 'Loaded' : 'Not Loaded'"></span>
+      </span>
+      <span class="badge" :class="status && (status.drop_icmp === 1 || status.drop_icmp === '1') ? 'badge-up' : 'badge-secondary'" style="font-size:0.875rem;">
+        ICMP Filter: <span x-text="status && (status.drop_icmp === 1 || status.drop_icmp === '1') ? 'On' : 'Off'"></span>
+      </span>
+      <span class="badge" :class="status && (status.enabled === 1 || status.enabled === '1') ? 'badge-up' : 'badge-secondary'" style="font-size:0.875rem;">
+        Enabled: <span x-text="status && (status.enabled === 1 || status.enabled === '1') ? 'On' : 'Off'"></span>
+      </span>
+    </div>
+
+    <!-- Toggle buttons -->
+    <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
+      <button class="btn btn-secondary btn-sm" x-on:click="toggleField('enabled')" :disabled="!status">
+        <span x-text="status && (status.enabled === 1 || status.enabled === '1') ? 'Disable Module' : 'Enable Module'"></span>
+      </button>
+      <button class="btn btn-secondary btn-sm" x-on:click="toggleField('drop_icmp')" :disabled="!status">
+        <span x-text="status && (status.drop_icmp === 1 || status.drop_icmp === '1') ? 'ICMP Filter: On (click to disable)' : 'ICMP Filter: Off (click to enable)'"></span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Reject Ports section -->
+  <div class="card" style="margin-bottom:1rem;">
+    <div class="card-title">Reject Ports</div>
+    <p style="color:var(--text-muted); font-size:0.875rem; margin-bottom:0.75rem;">
+      Comma-separated list of ports to reject (1-65535). Leave empty to allow all.
+    </p>
+    <div style="display:flex; gap:0.5rem; align-items:flex-start; flex-wrap:wrap; margin-bottom:0.5rem;">
+      <input type="text" x-model="portsInput" placeholder="e.g. 21,23,8080" style="flex:1; min-width:200px;" />
+      <button class="btn btn-primary btn-sm" x-on:click="updatePorts()" :disabled="portsLoading || !portsInput.trim()">
+        <span x-show="portsLoading" class="spinner" style="width:14px;height:14px;"></span>
+        <span x-show="!portsLoading">Update Ports</span>
+      </button>
+    </div>
+    <div x-show="status && status.reject_ports" style="font-size:0.8125rem; color:var(--text-muted);">
+      Current ports: <code style="background:#f1f5f9; padding:0.1rem 0.4rem; border-radius:4px;" x-text="status.reject_ports || '(none)'"></code>
+    </div>
+  </div>
+
+  <!-- Blocked Events / dmesg Logs section -->
+  <div class="card">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem;">
+      <div class="card-title" style="margin-bottom:0; border-bottom:none; padding-bottom:0;">Blocked Events</div>
+      <button class="btn btn-secondary btn-sm" x-on:click="loadLogs()" :disabled="logLoading">
+        <span x-show="logLoading" class="spinner" style="width:14px;height:14px;"></span>
+        <span x-show="!logLoading">Refresh Logs</span>
+      </button>
+    </div>
+
+    <div x-show="logLoading && logs.length === 0" class="loading-overlay" style="padding:2rem;">
+      <div class="spinner"></div>
+    </div>
+
+    <div x-show="!logLoading && logs.length === 0" class="empty-state">
+      <div class="empty-state-icon">&#128274;</div>
+      <div class="empty-state-text">No blocked events recorded</div>
+    </div>
+
+    <div x-show="logs.length > 0" style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Time (s)</th>
+            <th>Message</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="(log, i) in logs" :key="i">
+            <tr>
+              <td class="monospace" style="white-space:nowrap;" x-text="log.time"></td>
+              <td class="monospace" style="font-size:0.8125rem; color:var(--text-primary);" x-text="log.message"></td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
