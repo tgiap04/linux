@@ -1,28 +1,33 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * kma-vfs-guard.c — LSM module to block unlink on protected directories
+ * vfs_guard.c — Built-in LSM for Linux 7.0: block unlink/rmdir/rename
+ * on protected directories.
  *
  * Uses hash table + RCU for O(1) lockless lookup of protected inodes.
  * sysfs interface at /sys/kernel/kma-vfs-guard/ for runtime management.
+ * Boot-time paths: kma_vfs_guard.protected_paths="/path1:/path2"
+ *
+ * Registered as a built-in LSM via DEFINE_LSM(), not a loadable module
+ * (security_add_hooks is not exported in Linux 7.0).
  */
-#include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/security.h>
 #include <linux/lsm_hooks.h>
 #include <linux/fs.h>
 #include <linux/namei.h>
 #include <linux/slab.h>
-#include <linux/hashtable.h>  /* DEFINE_HASHTABLE, hash_for_each*, hash_add_rcu */
+#include <linux/hashtable.h>
 #include <linux/rculist.h>
 #include <linux/kobject.h>
 #include <linux/string.h>
 #include <linux/spinlock.h>
 
-/* NOTE: do NOT name this KMA_NAME — that token is used internally by the
- * MODULE_*() macros (MODULE_VERSION etc.), and #defining it to a string literal
- * breaks their expansion ("expected ')' before string constant"). */
-#define KMA_NAME "kma-vfs-guard"
+/* Must match the token in CONFIG_LSM (underscores, not dashes) because the
+ * LSM framework does strcmp(lsm_info->id->name, token) against CONFIG_LSM. */
+#define KMA_NAME "kma_vfs_guard"
 #define HT_BITS 12  /* 4096 buckets */
+/* Sysfs/kobject name — can use dashes (different from the LSM match name) */
+#define KMA_SYSFS_NAME "kma-vfs-guard"
 
 /* --- Hash table for protected inodes --- */
 
@@ -33,7 +38,6 @@ struct prot_entry {
 	dev_t dev;
 };
 
-/* Combined hash key: both ino and dev */
 static inline u32 prot_hash(unsigned long ino, dev_t dev)
 {
 	return hash_32(hash_long(ino ^ dev, 32), HT_BITS);
@@ -50,9 +54,6 @@ static bool prot_lookup(struct inode *inode)
 	int bkt;
 	bool found = false;
 
-	/* hash_for_each_rcu walks every bucket, so no per-key index is needed here.
-	 * prot_hash() is only used for the targeted hash_for_each_possible_rcu()
-	 * lookups in prot_add_entry()/prot_remove_entry(). */
 	rcu_read_lock();
 	hash_for_each_rcu(prot_ht, bkt, e, node) {
 		if (e->ino == inode->i_ino && e->dev == inode->i_sb->s_dev) {
@@ -75,7 +76,6 @@ static void prot_add_entry(struct inode *inode)
 	struct prot_entry *e;
 	u32 key = prot_hash(inode->i_ino, inode->i_sb->s_dev);
 
-	/* Atomic: check + insert under single lock, no TOCTOU */
 	spin_lock(&prot_lock);
 	hash_for_each_possible_rcu(prot_ht, e, node, key) {
 		if (e->ino == inode->i_ino && e->dev == inode->i_sb->s_dev) {
@@ -122,18 +122,14 @@ static void prot_remove_entry(struct inode *inode)
 
 static int prot_inode_unlink(struct inode *dir, struct dentry *dentry)
 {
-	struct inode *inode;
-
-	if (!dentry)
+	/* Protecting a directory means files INSIDE it can't be unlinked.
+	 * Check if the parent directory (dir) is in the protected set. */
+	if (!dir)
 		return 0;
 
-	inode = d_inode(dentry);
-	if (!inode)
-		return 0;
-
-	if (prot_lookup(inode)) {
-		pr_warn("%s: blocked unlink on ino=%lu dev=%u\n",
-			KMA_NAME, inode->i_ino, inode->i_sb->s_dev);
+	if (prot_lookup(dir)) {
+		pr_warn("%s: blocked unlink in dir ino=%lu dev=%u\n",
+			KMA_NAME, dir->i_ino, dir->i_sb->s_dev);
 		return -EPERM;
 	}
 
@@ -145,36 +141,33 @@ static int prot_inode_rmdir(struct inode *dir, struct dentry *dentry)
 	return prot_inode_unlink(dir, dentry);
 }
 
-/* kernel 7.0 path_rename hook carries a trailing `unsigned int flags` arg. */
 static int prot_path_rename(const struct path *old_dir, struct dentry *old_dentry,
 			     const struct path *new_dir, struct dentry *new_dentry,
 			     unsigned int flags)
 {
-	struct inode *inode;
+	struct inode *src_dir;
 
-	if (!old_dentry)
+	/* Block renaming anything OUT OF a protected directory.
+	 * old_dir is the source parent directory of the rename. */
+	if (!old_dir || !old_dir->dentry)
 		return 0;
 
-	inode = d_inode(old_dentry);
-	if (!inode)
+	src_dir = d_inode(old_dir->dentry);
+	if (!src_dir)
 		return 0;
 
-	/* Block rename-out of protected dirs */
-	if (prot_lookup(inode)) {
-		pr_warn("%s: blocked rename-out on ino=%lu dev=%u\n",
-			KMA_NAME, inode->i_ino, inode->i_sb->s_dev);
+	if (prot_lookup(src_dir)) {
+		pr_warn("%s: blocked rename-out of dir ino=%lu dev=%u\n",
+			KMA_NAME, src_dir->i_ino, src_dir->i_sb->s_dev);
 		return -EPERM;
 	}
 
 	return 0;
 }
 
-/* Kernel 7.0 LSM API: hook arrays use __ro_after_init (the old
- * __lsm_ro_after_init was removed), and security_add_hooks() takes a
- * `const struct lsm_id *` as its 3rd arg instead of a name string.
- * As an out-of-tree LSM we have no officially-assigned LSM_ID, so we use
- * LSM_ID_UNDEF — the .id is only reported via lsm_list_modules(); the hooks
- * themselves work regardless. */
+/* Kernel 7.0 LSM API: hook arrays use __ro_after_init, and
+ * security_add_hooks() takes a const struct lsm_id *. LSM_ID_UNDEF is used
+ * because we are an out-of-tree LSM with no official ID. */
 static const struct lsm_id kma_lsmid = {
 	.name = KMA_NAME,
 	.id   = LSM_ID_UNDEF,
@@ -263,40 +256,59 @@ static struct attribute_group kma_attr_group = {
 	.attrs = kma_attrs,
 };
 
-/* --- Module params --- */
+/* --- Boot-time protected paths (kernel cmdline) --- */
 
-static char *protected_paths;
-module_param(protected_paths, charp, 0644);
-MODULE_PARM_DESC(protected_paths, "Colon-separated list of paths to protect at load");
+static char *protected_paths_param;
+/* __setup + early_param for builtin; module_param is only for loadable modules. */
+static int __init kma_vfs_guard_setup(char *str)
+{
+	protected_paths_param = str;
+	return 1;
+}
+__setup(KMA_NAME ".protected_paths=", kma_vfs_guard_setup);
 
-/* --- Module init/exit --- */
+/* --- LSM init (called from security_init() inside start_kernel()) --- */
 
 static int __init kma_vfs_guard_init(void)
 {
-	int ret;
-
-	/* security_add_hooks() returns void in kernel 7.0 — registration cannot
-	 * fail at this point, so just call it. */
+	/* Phase 1: register LSM hooks — this MUST happen at boot.
+	 * security_add_hooks() is available early; the hooks themselves
+	 * just store pointers — they don't need sysfs or VFS to be ready. */
 	security_add_hooks(kma_hooks, ARRAY_SIZE(kma_hooks), &kma_lsmid);
 
-	kma_kobj = kobject_create_and_add(KMA_NAME, kernel_kobj);
+	pr_info("%s: hooks registered\n", KMA_NAME);
+	return 0;
+}
+
+DEFINE_LSM(kma_vfs_guard) = {
+	.id   = &kma_lsmid,
+	.init = kma_vfs_guard_init,
+};
+
+/* --- Late init: sysfs + cmdline paths (after VFS + kobject ready) --- */
+
+static int __init kma_vfs_guard_late_init(void)
+{
+	int ret;
+
+	/* Create sysfs interface — kernel_kobj is ready by late_initcall */
+	kma_kobj = kobject_create_and_add(KMA_SYSFS_NAME, kernel_kobj);
 	if (!kma_kobj) {
-		pr_err("%s: kobject_create_and_add failed\n", KMA_NAME);
-		return -ENOMEM;
+		pr_warn("%s: sysfs not available (hooks still active)\n", KMA_NAME);
+	} else {
+		ret = sysfs_create_group(kma_kobj, &kma_attr_group);
+		if (ret) {
+			pr_warn("%s: sysfs_create_group failed (%d)\n", KMA_NAME, ret);
+			kobject_put(kma_kobj);
+			kma_kobj = NULL;
+		}
 	}
 
-	ret = sysfs_create_group(kma_kobj, &kma_attr_group);
-	if (ret) {
-		pr_err("%s: sysfs_create_group failed (%d)\n", KMA_NAME, ret);
-		kobject_put(kma_kobj);
-		return ret;
-	}
-
-	/* Process initial protected paths from module param */
-	if (protected_paths && *protected_paths) {
+	/* Process protected paths from kernel cmdline */
+	if (protected_paths_param && *protected_paths_param) {
 		char *path_str, *token;
 
-		path_str = kstrdup(protected_paths, GFP_KERNEL);
+		path_str = kstrdup(protected_paths_param, GFP_KERNEL);
 		if (path_str) {
 			for (token = strsep(&path_str, ":"); token; token = strsep(&path_str, ":")) {
 				struct path path;
@@ -312,37 +324,8 @@ static int __init kma_vfs_guard_init(void)
 		}
 	}
 
-	pr_info("%s: loaded\n", KMA_NAME);
+	pr_info("%s: ready\n", KMA_NAME);
 	return 0;
 }
 
-static void __exit kma_vfs_guard_exit(void)
-{
-	struct prot_entry *e;
-	struct hlist_node *tmp;
-	int bkt;
-
-	/* Remove all entries */
-	spin_lock(&prot_lock);
-	hash_for_each_safe(prot_ht, bkt, tmp, e, node) {
-		hash_del_rcu(&e->node);
-		kfree(e);
-	}
-	spin_unlock(&prot_lock);
-
-	sysfs_remove_group(kma_kobj, &kma_attr_group);
-	kobject_put(kma_kobj);
-
-	pr_info("%s: unloaded — hits=%lld misses=%lld\n",
-		KMA_NAME,
-		atomic64_read(&stat_hits),
-		atomic64_read(&stat_misses));
-}
-
-module_init(kma_vfs_guard_init);
-module_exit(kma_vfs_guard_exit);
-
-MODULE_LICENSE("GPL");
-MODULE_AUTHOR("KMA OS");
-MODULE_DESCRIPTION("LSM module to block unlink on protected directories");
-MODULE_VERSION("1.0.0");
+late_initcall(kma_vfs_guard_late_init);

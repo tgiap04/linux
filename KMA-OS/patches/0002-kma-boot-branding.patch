@@ -1,0 +1,44 @@
+From: KMA OS <kma@kma-os.dev>
+Date: Sun, 21 Jun 2026 00:00:00 +0700
+Subject: [PATCH] kma: add boot banner + ASCII logo at kernel init
+
+Print the "Welcome to KMA OS" banner and a custom ASCII logo from
+init/main.c during start_kernel(), right after set_task_stack_end_magic().
+Banner + logo merged into a single pr_info() block (one location only,
+avoids the two-patch conflict the old 0002/0003 split had). ASCII-only
+so it renders on early-boot and serial consoles without Unicode glyphs.
+
+Built into the kernel image -> persists on every boot, no module to load.
+Verify: dmesg | grep "Welcome to KMA OS"
+
+NOTE: hunk targets the call right after set_task_stack_end_magic(). If the
+kernel version changes and start_kernel() is reorganised, regenerate from
+the new tree (see README "Branding").
+
+Signed-off-by: KMA OS <kma@kma-os.dev>
+---
+diff --git a/init/main.c b/init/main.c
+index 1cb395d..2add6c3 100644
+--- a/init/main.c
++++ b/init/main.c
+@@ -1011,6 +1011,20 @@ void start_kernel(void)
+ 	char *after_dashes;
+ 
+ 	set_task_stack_end_magic(&init_task);
++
++	/* KMA OS branding banner + ASCII logo (printed early during boot) */
++	pr_info("\n");
++	pr_info("  +======================================+\n");
++	pr_info("  |         Welcome to KMA OS            |\n");
++	pr_info("  |      Minimalist Linux Kernel         |\n");
++	pr_info("  +======================================+\n");
++	pr_info("\n");
++	pr_info("      _  __ __  __    _      ___  ___\n");
++	pr_info("     | |/ /|  \\/  |  / \\    / _ \\/ __|\n");
++	pr_info("     | . \\ | |\\/| | / _ \\  | (_) \\__ \\\n");
++	pr_info("     |_|\\_\\|_|  |_|/_/ \\_\\  \\___/|___/\n");
++	pr_info("     --- Minimalist Linux ---\n");
++	pr_info("\n");
+ 	smp_setup_processor_id();
+ 	debug_objects_early_init();
+ 	init_vmlinux_build_id();

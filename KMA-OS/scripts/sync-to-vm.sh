@@ -4,8 +4,8 @@
 set -euo pipefail
 
 # Configurable via env vars
-KMA_VM_SSH="${KMA_VM_SSH:-kma@10.0.2.15}"
-KMA_VM_DIR="${KMA_VM_DIR:-/home/kma/kernel-src}"
+KMA_VM_SSH="${KMA_VM_SSH:-tobi@192.168.64.3}"
+KMA_VM_DIR="${KMA_VM_DIR:-/home/tobi/projects/linux/KMA-OS}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 

@@ -23,6 +23,7 @@ sudo apt-get install -y -qq \
     libncurses-dev \
     libssl-dev \
     libelf-dev \
+    libdwarf-dev \
     flex \
     bison \
     dwarves \
