@@ -1,0 +1,40 @@
+# UTM VM Configuration for KMA OS Kernel Development
+# Import: UTM → File → Browse → select this .utm folder
+# Or copy to ~/Library/Containers/com.utmapp.UTM/Data/Documents/
+
+[General]
+name = "KMA-OS-Ubuntu"
+icon = ""
+notes = "Ubuntu 26.04 LTS ARM64 for KMA OS kernel compilation"
+
+[Configuration]
+cpuCount = 0  # 0 = all available cores (Apple Silicon: all P+E cores)
+cpu = "host"
+memorySize = 8192  # 8 GB RAM
+storageSize = 60  # 60 GB qcow2 (kernel source ~2GB + build ~8GB + swap + headroom)
+storageSource = ""  # blank = new qcow2 created on import
+storageInterface = "virtio"
+networkInterfaces = [
+    { name = "eth0", interface = "virtio", mode = "nat" }
+]
+drives = []  # ISO added manually after import
+
+[Boot]
+boot = ""  # set after Ubuntu ISO attached
+
+[Display]
+display = "none"  # headless — SSH only
+displayResolution = ""
+retinaMode = false
+
+[Input]
+keyboard = "en-us"
+mouse = "tablet"
+
+[Serial]
+serial = "disabled"
+
+[Sharing]
+# Shared folder configured via UTM GUI → Sharing tab
+# Mount in guest: sudo mount -t 9p -o trans=virtio,version=9p2000.L KMA-SRC /mnt/shared
+sharedDirectoryReadOnly = false
