@@ -12,6 +12,7 @@ A modular interactive shell script for managing Linux systems from the terminal.
 | 4 | Package Management | Install/purge/update packages (apt on Ubuntu) |
 | 5 | Process Management | List, kill, monitor processes; find process by port |
 | 6 | Network & Sockets | Ports, interfaces, routes, DNS, firewall (ufw) |
+| 7 | Firewall (Kernel) | Linux kernel module firewall via netfilter — block ICMP, reject TCP ports, live dmesg logs |
 
 ---
 
@@ -90,8 +91,6 @@ node --version   # should be >= 18
 cd web
 npm install
 node server.js
-python3 -m http.server 5000
-nc -zv 192.168.64.3 5000
 ```
 
 Default port is **3000**. Access at `http://localhost:3000` or `http://<your-server-ip>:3000`.
@@ -112,6 +111,78 @@ PORT=3000 nohup node server.js > web.log 2>&1 &
 npm install -g pm2
 PORT=3000 pm2 start server.js --name sys-cli-web
 pm2 save
+```
+
+---
+
+## Kernel Firewall Module
+
+A loadable kernel module (`ubuntu_firewall.ko`) that hooks into netfilter at `NF_INET_PRE_ROUTING` to filter incoming packets.
+
+### Features
+
+- **Enable/disable** firewall without rebooting
+- **Drop ICMP** (ping) to hide the server from network scanners
+- **Reject TCP ports** — configurable list via sysfs (e.g. block FTP port 21, Telnet port 23)
+- **Kernel logs** — all blocked packets logged to kernel ring buffer (readable via `dmesg`)
+- **Web Dashboard** — control and monitor via browser at `/firewall`
+
+### Build & Load
+
+```bash
+# Install kernel headers
+sudo apt-get install -y linux-headers-$(uname -r) build-essential
+
+# Build
+cd kernel
+sudo make
+
+# Load
+sudo insmod ubuntu_firewall.ko
+
+# Verify
+lsmod | grep ubuntu_firewall
+dmesg | grep ubuntu_firewall
+```
+
+### sysfs Interface
+
+```bash
+# Enable / disable firewall
+echo 1 | sudo tee /sys/firewall/enabled
+echo 0 | sudo tee /sys/firewall/enabled
+
+# Enable / disable ICMP drop
+echo 1 | sudo tee /sys/firewall/drop_icmp
+
+# Block specific TCP ports (comma-separated)
+echo "21,23" | sudo tee /sys/firewall/reject_ports
+
+# Clear all blocked ports
+echo -n "" | sudo tee /sys/firewall/reject_ports
+
+# Check current status
+cat /sys/firewall/status
+```
+
+### Unload
+
+```bash
+sudo rmmod ubuntu_firewall
+```
+
+### Test
+
+```bash
+# Start a fake listener on a port (simulates a service)
+nc -lk 21
+python3 -m http.server 5000
+
+# From another machine — test if port is reachable
+nc -zv <server-ip> 21      # should fail if 21 is in reject_ports
+
+# Watch kernel logs in real time
+sudo dmesg -w | grep ubuntu_firewall
 ```
 
 ---
@@ -164,6 +235,9 @@ sys-cli/
 │   ├── pkg-mgmt.sh
 │   ├── process-mgmt.sh
 │   └── network-mgmt.sh
+├── kernel/             # Kernel firewall module
+│   ├── ubuntu_firewall.c   # Netfilter hook + sysfs interface
+│   └── Makefile
 ├── docs/
 │   └── usage-guide.md  # Full module reference
 └── web/                # Web UI (Node.js + Express)
