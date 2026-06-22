@@ -1,0 +1,250 @@
+{
+  "generated_at": "2026-06-22T14:48:06Z",
+  "plan": "260622-2024-rebuild-spec",
+  "features": [
+    {
+      "fcode": "F001",
+      "name": "Module Navigation & Layout",
+      "slug": "F001_ModuleNavigationAndLayout",
+      "priority": "P1",
+      "type": "ui",
+      "related": {
+        "screens": [],
+        "user_stories": [],
+        "routes": [],
+        "models": [],
+        "bl": [],
+        "perms": []
+      }
+    },
+    {
+      "fcode": "F002",
+      "name": "File System Browser",
+      "slug": "F002_FileSystemBrowser",
+      "priority": "P1",
+      "type": "ui",
+      "related": {
+        "screens": [],
+        "user_stories": [],
+        "routes": [],
+        "models": [],
+        "bl": [],
+        "perms": []
+      }
+    },
+    {
+      "fcode": "F003",
+      "name": "File CRUD Operations",
+      "slug": "F003_FileCrudOperations",
+      "priority": "P1",
+      "type": "ui",
+      "related": {
+        "screens": [],
+        "user_stories": [],
+        "routes": [],
+        "models": [],
+        "bl": [],
+        "perms": []
+      }
+    },
+    {
+      "fcode": "F004",
+      "name": "Cron Job Management",
+      "slug": "F004_CronJobManagement",
+      "priority": "P1",
+      "type": "ui",
+      "related": {
+        "screens": [],
+        "user_stories": [],
+        "routes": [],
+        "models": [],
+        "bl": [],
+        "perms": []
+      }
+    },
+    {
+      "fcode": "F005",
+      "name": "System Time & Timezone",
+      "slug": "F005_SystemTimeAndTimezone",
+      "priority": "P1",
+      "type": "ui",
+      "related": {
+        "screens": [],
+        "user_stories": [],
+        "routes": [],
+        "models": [],
+        "bl": [],
+        "perms": []
+      }
+    },
+    {
+      "fcode": "F006",
+      "name": "Package Installation & Removal",
+      "slug": "F006_PackageInstallationAndRemoval",
+      "priority": "P1",
+      "type": "ui",
+      "related": {
+        "screens": [],
+        "user_stories": [],
+        "routes": [],
+        "models": [],
+        "bl": [],
+        "perms": []
+      }
+    },
+    {
+      "fcode": "F007",
+      "name": "System Package Update & Cleanup",
+      "slug": "F007_SystemPackageUpdateAndCleanup",
+      "priority": "P1",
+      "type": "ui",
+      "related": {
+        "screens": [],
+        "user_stories": [],
+        "routes": [],
+        "models": [],
+        "bl": [],
+        "perms": []
+      }
+    },
+    {
+      "fcode": "F008",
+      "name": "Process Management",
+      "slug": "F008_ProcessManagement",
+      "priority": "P1",
+      "type": "ui",
+      "related": {
+        "screens": [],
+        "user_stories": [],
+        "routes": [],
+        "models": [],
+        "bl": [],
+        "perms": []
+      }
+    },
+    {
+      "fcode": "F009",
+      "name": "Network Inspection",
+      "slug": "F009_NetworkInspection",
+      "priority": "P2",
+      "type": "ui",
+      "related": {
+        "screens": [],
+        "user_stories": [],
+        "routes": [],
+        "models": [],
+        "bl": [],
+        "perms": []
+      }
+    },
+    {
+      "fcode": "F010",
+      "name": "Network Connectivity Testing",
+      "slug": "F010_NetworkConnectivityTesting",
+      "priority": "P2",
+      "type": "ui",
+      "related": {
+        "screens": [],
+        "user_stories": [],
+        "routes": [],
+        "models": [],
+        "bl": [],
+        "perms": []
+      }
+    },
+    {
+      "fcode": "F011",
+      "name": "Kernel Firewall Status",
+      "slug": "F011_KernelFirewallStatus",
+      "priority": "P1",
+      "type": "ui",
+      "related": {
+        "screens": [],
+        "user_stories": [],
+        "routes": [],
+        "models": [],
+        "bl": [],
+        "perms": []
+      }
+    },
+    {
+      "fcode": "F012",
+      "name": "Kernel Firewall Control",
+      "slug": "F012_KernelFirewallControl",
+      "priority": "P1",
+      "type": "ui",
+      "related": {
+        "screens": [],
+        "user_stories": [],
+        "routes": [],
+        "models": [],
+        "bl": [],
+        "perms": []
+      }
+    },
+    {
+      "fcode": "F013",
+      "name": "KMA Kernel Branding",
+      "slug": "F013_KmaKernelBranding",
+      "priority": "P3",
+      "type": "background",
+      "related": {
+        "screens": [],
+        "user_stories": [],
+        "routes": [],
+        "models": [],
+        "bl": [],
+        "perms": []
+      }
+    },
+    {
+      "fcode": "F014",
+      "name": "VFS Inode Protection",
+      "slug": "F014_VfsInodeProtection",
+      "priority": "P1",
+      "type": "background",
+      "related": {
+        "screens": [],
+        "user_stories": [],
+        "routes": [],
+        "models": [],
+        "bl": [],
+        "perms": []
+      }
+    },
+    {
+      "fcode": "F015",
+      "name": "Covert Channel Transmission",
+      "slug": "F015_CovertChannelTransmission",
+      "priority": "P2",
+      "type": "background",
+      "related": {
+        "screens": [],
+        "user_stories": [],
+        "routes": [],
+        "models": [],
+        "bl": [],
+        "perms": []
+      }
+    },
+    {
+      "fcode": "F016",
+      "name": "Sudo Authentication",
+      "slug": "F016_SudoAuthentication",
+      "priority": "P1",
+      "type": "ui",
+      "related": {
+        "screens": [],
+        "user_stories": [
+          "US002"
+        ],
+        "routes": [],
+        "models": [],
+        "bl": [
+          "BL015"
+        ],
+        "perms": []
+      }
+    }
+  ]
+}

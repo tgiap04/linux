@@ -1,0 +1,19 @@
+# Wave 9 complete — 2026-06-22T15:12:40Z
+# Wave 9.5 complete (core cursor advanced by orchestrator)
+# Scope: core
+# Mode: full
+# Affected artifacts: all
+# Archive GC: kept latest 5, removed 0 older
+1feaa635a759294063073b1a7055f7e9beb19d93e2d8aa2fe99193cf6638de97  docs/system/architecture.md
+ed359993945267007a47634ad889e7ae2946eadd0a23fdef9ce7f3dfa43a907f  docs/generated/route-list.md
+5830f6f6f1dc52b2af9ca7eb69d80cbbf423fa3018a549be270b6fef9bdf0ac1  docs/generated/entities.md
+0fc5a77550cf4571153dbcdd7e9b880135988532fa6871728eebd0bb8b4f5be5  docs/generated/screen-list.md
+ad5fb4dfd168c5f1bf5a176ea6c7977d6f7315a5f8aa2f58122b1f6ea1ca6a90  docs/generated/screen-flow.md
+4be43e82400e4112c845cf9f54f5b5d8bd37ef7e549cfe39979794cc4bce629b  docs/generated/behavior-logic.md
+59ce758e16611047b043138c9e77acb2a8941598f4e5de8f1d138abd227d4369  docs/generated/api-map.md
+1c0e79f88cc11c7293f97efed30cbe9b67f86c781b74a9f0c4e07c46c3fd65aa  docs/system/permissions.md
+0242773f4f3c9c5c35b8044c1a704b3cb966586485fb1b7716bacf283f5d4967  docs/generated/permissions-matrix.md
+ea4035f6ea8c8dd31087bd00c4520208af52a0e4c986954ea694c824b7cab67f  docs/generated/user-stories.md
+efc8a8c9c9d741658ca2832024a1789f4488d6e30bf84f9e8593fca352caac41  docs/generated/feature-list.md
+0e9fb86946288e05dd47febbbbf001f7c680f92cefb3513bf45f00f6e40d3e8b  docs/system/business-rules.md
+7202a44e581bdbf4d27bffbe88fc37f3a0dc0f0568476de52a5b77481d068f96  docs/system/overview.md
